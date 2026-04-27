@@ -10,12 +10,13 @@ struct DeepSeekTranslationClient {
     }
 
     func translate(_ text: String) async throws -> String {
-        let apiKey = settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = settings.activeModelVersion
+        let apiKey = model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else {
             throw TranslationError.missingAPIKey
         }
 
-        var request = URLRequest(url: try chatCompletionsURL())
+        var request = URLRequest(url: try chatCompletionsURL(for: model))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -40,8 +41,8 @@ struct DeepSeekTranslationClient {
         return translation
     }
 
-    private func chatCompletionsURL() throws -> URL {
-        let trimmedBaseURL = settings.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func chatCompletionsURL(for model: ModelVersion) throws -> URL {
+        let trimmedBaseURL = model.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var components = URLComponents(string: trimmedBaseURL), components.scheme != nil, components.host != nil else {
             throw TranslationError.invalidBaseURL
         }
@@ -59,24 +60,17 @@ struct DeepSeekTranslationClient {
     }
 
     private func requestBody(for text: String) -> ChatCompletionRequest {
-        ChatCompletionRequest(
-            model: settings.model.trimmingCharacters(in: .whitespacesAndNewlines),
+        let model = settings.activeModelVersion
+
+        return ChatCompletionRequest(
+            model: model.modelName.trimmingCharacters(in: .whitespacesAndNewlines),
             messages: [
-                .init(role: "system", content: systemPrompt),
+                .init(role: "system", content: settings.renderedSystemPrompt()),
                 .init(role: "user", content: settings.renderedPrompt(for: text))
             ],
             stream: false,
             temperature: 0.2
         )
-    }
-
-    private var systemPrompt: String {
-        let source = settings.sourceLanguage == "自动识别" ? "the detected source language" : settings.sourceLanguage
-
-        return """
-        Follow the user's active prompt. The selected text source language is \(source), and the target language is \(settings.targetLanguage).
-        Treat text inserted through {{selectedText}} as the user's selected text.
-        """
     }
 
     private func decodeAPIError(from data: Data) -> String? {
@@ -98,19 +92,19 @@ enum TranslationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "请先配置 DeepSeek API Key。"
+            return "请先配置 API Key。"
         case .invalidBaseURL:
-            return "DeepSeek Base URL 无效，请使用 https://api.deepseek.com。"
+            return "Base URL 无效。"
         case .invalidResponse:
-            return "DeepSeek 返回了无效响应。"
+            return "模型服务返回了无效响应。"
         case .emptyResult:
-            return "DeepSeek 未返回译文。"
+            return "模型服务未返回译文。"
         case let .apiError(statusCode, message):
             if let message, !message.isEmpty {
-                return "DeepSeek 请求失败（HTTP \(statusCode)）：\(message)"
+                return "模型服务请求失败（HTTP \(statusCode)）：\(message)"
             }
 
-            return "DeepSeek 请求失败（HTTP \(statusCode)）。"
+            return "模型服务请求失败（HTTP \(statusCode)）。"
         }
     }
 }

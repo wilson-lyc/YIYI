@@ -25,7 +25,7 @@ struct TranslationPanelView: View {
         .padding(12)
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color(red: 0.796, green: 0.800, blue: 0.804).opacity(0.72))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
         .onChange(of: appState.status) { _, status in
             handleRefreshStatusChange(status)
         }
@@ -193,3 +193,32 @@ private struct IconActionButton: View {
         .onHover { isHovered = $0 }
     }
 }
+
+#if DEBUG
+#Preview("翻译窗口 - 已翻译") {
+    TranslationPanelView(
+        appState: .translatedPreview,
+        onRefreshTranslation: {}
+    )
+    .padding()
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("翻译窗口 - 加载中") {
+    TranslationPanelView(
+        appState: .loadingPreview,
+        onRefreshTranslation: {}
+    )
+    .padding()
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("翻译窗口 - 错误") {
+    TranslationPanelView(
+        appState: .errorPreview,
+        onRefreshTranslation: {}
+    )
+    .padding()
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+#endif

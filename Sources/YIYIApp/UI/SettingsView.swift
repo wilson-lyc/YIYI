@@ -3,100 +3,381 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var appState: AppState
 
-    @State private var selectedPage: SettingsPage = .service
+    @State private var selectedPage: SettingsPage = .general
+    @State private var selectedModelID: UUID?
     @State private var selectedPromptID: UUID?
+    @State private var hoveredPage: SettingsPage?
+    @State private var hoveredModelID: UUID?
+    @State private var hoveredPromptID: UUID?
+    @State private var isModelAddHovered = false
+    @State private var isPromptAddHovered = false
 
     var body: some View {
         HStack(spacing: 0) {
-            navigation
+            sidebar
             Divider()
-            pageContent
+            content
         }
-        .frame(minWidth: 980, minHeight: 680)
+        .frame(minWidth: 920, minHeight: 620)
         .background(SettingsPalette.background)
         .onAppear {
+            selectedModelID = selectedModelID ?? appState.settings.activeModelVersionID
             selectedPromptID = selectedPromptID ?? appState.settings.activePromptVersionID
         }
     }
 
-    private var navigation: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("易译")
-                    .font(.system(size: 28, weight: .bold))
-                Text("翻译服务与工作流设置")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.top, 42)
-            .padding(.horizontal, 22)
-
-            VStack(spacing: 4) {
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 1) {
                 ForEach(SettingsPage.allCases) { page in
-                    navigationButton(page)
+                    sidebarButton(page)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.top, 18)
+            .padding(.horizontal, 8)
 
             Spacer()
-
-            statusPanel
-                .padding(.horizontal, 14)
-                .padding(.bottom, 18)
         }
-        .frame(width: 250)
+        .frame(width: 210)
         .background(SettingsPalette.sidebar)
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(Color.white.opacity(0.28))
-                .frame(width: 1)
-        }
     }
 
-    private func navigationButton(_ page: SettingsPage) -> some View {
+    private func sidebarButton(_ page: SettingsPage) -> some View {
         Button {
             selectedPage = page
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: page.symbolName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(page.tint.opacity(selectedPage == page ? 1 : 0.14), in: RoundedRectangle(cornerRadius: 7))
-                    .foregroundStyle(selectedPage == page ? .white : page.tint)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(page.title)
-                        .font(.system(size: 14, weight: .semibold))
-                    Text(page.subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(selectedPage == page ? .white.opacity(0.72) : .secondary)
-                }
-
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 18)
+                Text(page.title)
+                    .font(.system(size: 14, weight: .regular))
                 Spacer()
             }
-            .foregroundStyle(selectedPage == page ? .white : .primary)
-            .padding(.horizontal, 10)
-            .frame(height: 48)
+            .contentShape(Rectangle())
+            .foregroundStyle(selectedPage == page ? .primary : .secondary)
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(selectedPage == page ? SettingsPalette.selection : Color.clear)
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(sidebarButtonBackground(for: page))
             )
         }
         .buttonStyle(.plain)
+        .onHover { isHovered in
+            hoveredPage = isHovered ? page : nil
+        }
     }
 
-    private var statusPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(serviceStatus.title, systemImage: serviceStatus.symbolName)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(serviceStatus.color)
-
-            Text(serviceStatus.message)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+    private func sidebarButtonBackground(for page: SettingsPage) -> Color {
+        if selectedPage == page {
+            return SettingsPalette.selection
         }
-        .padding(12)
+
+        if hoveredPage == page {
+            return SettingsPalette.hover
+        }
+
+        return .clear
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch selectedPage {
+        case .general:
+            generalPage
+        case .models:
+            modelsPage
+        case .prompts:
+            promptsPage
+        }
+    }
+
+    private var generalPage: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            pageTitle("常规")
+
+            settingsPanel {
+                settingsRow("主题", contentAlignment: .trailing) {
+                    Picker("", selection: $appState.settings.appearancePreference) {
+                        ForEach(AppearancePreference.allCases) { preference in
+                            Text(preference.title)
+                                .tag(preference)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 260)
+                }
+
+                Divider()
+
+                settingsRow("开机自启", contentAlignment: .trailing) {
+                    Toggle("", isOn: $appState.settings.launchAtLogin)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                Divider()
+
+                settingsRow("快捷键配置", contentAlignment: .trailing) {
+                    TextField("⌥D", text: $appState.settings.shortcutDisplay)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 260)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var modelsPage: some View {
+        versionPage(title: "模型") {
+            versionList(
+                items: appState.settings.modelVersions,
+                activeID: appState.settings.activeModelVersionID,
+                selectedID: selectedModelID,
+                hoveredID: $hoveredModelID,
+                isAddHovered: $isModelAddHovered,
+                addTitle: "新增模型",
+                title: \.name,
+                onSelect: { selectedModelID = $0 },
+                onAdd: { selectedModelID = appState.addModelVersion() }
+            )
+        } detail: {
+            if let model = selectedModelBinding {
+                modelEditor(model)
+            } else {
+                emptyState("未选择模型")
+            }
+        }
+    }
+
+    private func modelEditor(_ model: Binding<ModelVersion>) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            settingsPanel {
+                settingsRow("名称") {
+                    TextField("名称", text: model.name)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Divider()
+
+                settingsRow("协议") {
+                    Text("OpenAI")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                settingsRow("Base URL") {
+                    TextField("https://api.openai.com/v1", text: model.baseURL)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Divider()
+
+                settingsRow("API Key") {
+                    SecureField("API Key", text: model.apiKey)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Divider()
+
+                settingsRow("模型名称") {
+                    TextField("gpt-4o-mini", text: model.modelName)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+
+            actionRow(
+                isActive: appState.settings.activeModelVersionID == model.wrappedValue.id,
+                activateTitle: "设为当前",
+                deleteTitle: "删除",
+                canDelete: appState.settings.modelVersions.count > 1,
+                onActivate: { appState.activateModelVersion(id: model.wrappedValue.id) },
+                onDelete: {
+                    appState.deleteModelVersion(id: model.wrappedValue.id)
+                    selectedModelID = appState.settings.activeModelVersionID
+                }
+            )
+        }
+    }
+
+    private var promptsPage: some View {
+        versionPage(title: "提示词") {
+            versionList(
+                items: appState.settings.promptVersions,
+                activeID: appState.settings.activePromptVersionID,
+                selectedID: selectedPromptID,
+                hoveredID: $hoveredPromptID,
+                isAddHovered: $isPromptAddHovered,
+                addTitle: "新增提示词",
+                title: \.name,
+                onSelect: { selectedPromptID = $0 },
+                onAdd: { selectedPromptID = appState.addPromptVersion() }
+            )
+        } detail: {
+            if let prompt = selectedPromptBinding {
+                promptEditor(prompt)
+            } else {
+                emptyState("未选择提示词")
+            }
+        }
+    }
+
+    private func promptEditor(_ prompt: Binding<PromptVersion>) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            settingsPanel {
+                settingsRow("名称") {
+                    TextField("名称", text: prompt.name)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("系统提示词")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    editor(text: prompt.systemPrompt, height: 120)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("提示词")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    editor(text: prompt.prompt, height: 230)
+                }
+            }
+
+            actionRow(
+                isActive: appState.settings.activePromptVersionID == prompt.wrappedValue.id,
+                activateTitle: "设为当前",
+                deleteTitle: "删除",
+                canDelete: appState.settings.promptVersions.count > 1,
+                onActivate: { appState.activatePromptVersion(id: prompt.wrappedValue.id) },
+                onDelete: {
+                    appState.deletePromptVersion(id: prompt.wrappedValue.id)
+                    selectedPromptID = appState.settings.activePromptVersionID
+                }
+            )
+        }
+    }
+
+    private func versionPage<ListContent: View, DetailContent: View>(
+        title: String,
+        @ViewBuilder list: () -> ListContent,
+        @ViewBuilder detail: () -> DetailContent
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 22) {
+            pageTitle(title)
+
+            HStack(alignment: .top, spacing: 24) {
+                list()
+                    .frame(width: 220)
+
+                ScrollView {
+                    detail()
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(.trailing, 2)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func versionList<Item: Identifiable>(
+        items: [Item],
+        activeID: UUID,
+        selectedID: UUID?,
+        hoveredID: Binding<UUID?>,
+        isAddHovered: Binding<Bool>,
+        addTitle: String,
+        title: KeyPath<Item, String>,
+        onSelect: @escaping (UUID) -> Void,
+        onAdd: @escaping () -> Void
+    ) -> some View where Item.ID == UUID {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(items) { item in
+                Button {
+                    onSelect(item.id)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: activeID == item.id ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(activeID == item.id ? SettingsPalette.accent : .secondary)
+                        Text(item[keyPath: title])
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 10)
+                    .frame(height: 34)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(selectionBackground(isSelected: selectedID == item.id, isHovered: hoveredID.wrappedValue == item.id))
+                    )
+                }
+                .buttonStyle(.plain)
+                .onHover { isHovered in
+                    hoveredID.wrappedValue = isHovered ? item.id : nil
+                }
+            }
+
+            Button(action: onAdd) {
+                Label(addTitle, systemImage: "plus")
+                    .font(.system(size: 13, weight: .medium))
+                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .frame(height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(selectionBackground(isSelected: false, isHovered: isAddHovered.wrappedValue))
+                    )
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered in
+                isAddHovered.wrappedValue = isHovered
+            }
+        }
+    }
+
+    private func selectionBackground(isSelected: Bool, isHovered: Bool) -> Color {
+        if isSelected {
+            return SettingsPalette.selection
+        }
+
+        if isHovered {
+            return SettingsPalette.hover
+        }
+
+        return .clear
+    }
+
+    private func pageTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 24, weight: .semibold))
+    }
+
+    private func settingsPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content()
+        }
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(SettingsPalette.panel, in: RoundedRectangle(cornerRadius: 8))
         .overlay(
@@ -105,327 +386,87 @@ struct SettingsView: View {
         )
     }
 
-    private var pageContent: some View {
-        VStack(spacing: 0) {
-            header
+    private func settingsRow<Content: View>(
+        _ title: String,
+        contentAlignment: Alignment = .leading,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 96, alignment: .leading)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    switch selectedPage {
-                    case .service:
-                        servicePage
-                    case .translation:
-                        translationPage
-                    case .prompts:
-                        promptsPage
-                    }
-                }
-                .frame(maxWidth: 690, alignment: .topLeading)
-                .padding(.horizontal, 42)
-                .padding(.bottom, 42)
-            }
+            content()
+                .frame(maxWidth: .infinity, alignment: contentAlignment)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minHeight: 34)
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: selectedPage.symbolName)
-                .font(.system(size: 18, weight: .semibold))
-                .frame(width: 36, height: 36)
-                .background(selectedPage.tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(selectedPage.tint)
+    private func editor(text: Binding<String>, height: CGFloat) -> some View {
+        TextEditor(text: text)
+            .font(.system(.body, design: .monospaced))
+            .scrollContentBackground(.hidden)
+            .padding(10)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(SettingsPalette.border)
+            )
+            .frame(height: height)
+    }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(selectedPage.title)
-                    .font(.system(size: 24, weight: .bold))
-                Text(selectedPage.description)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+    private func actionRow(
+        isActive: Bool,
+        activateTitle: String,
+        deleteTitle: String,
+        canDelete: Bool,
+        onActivate: @escaping () -> Void,
+        onDelete: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 10) {
+            if isActive {
+                Label("当前", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(SettingsPalette.accent)
+            } else {
+                Button(activateTitle, action: onActivate)
             }
+
+            Button(role: .destructive, action: onDelete) {
+                Text(deleteTitle)
+            }
+            .disabled(!canDelete)
 
             Spacer()
         }
-        .padding(.horizontal, 42)
-        .frame(height: 92)
     }
 
-    private var servicePage: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            settingsGroup("模型服务", footer: "Base URL、API Key 和模型名称会直接用于 DeepSeek 兼容的 chat completions 请求。") {
-                settingsField("Base URL", systemImage: "link") {
-                    TextField("https://api.deepseek.com", text: $appState.settings.baseURL)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                settingsDivider
-
-                settingsField("API Key", systemImage: "key.fill") {
-                    SecureField("输入 API Key", text: $appState.settings.apiKey)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                settingsDivider
-
-                settingsField("模型名称", systemImage: "cpu") {
-                    TextField("deepseek-v4-flash", text: $appState.settings.model)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 320)
-                }
-            }
-
-            settingsGroup("连接摘要") {
-                VStack(alignment: .leading, spacing: 12) {
-                    summaryRow("服务地址", value: trimmed(appState.settings.baseURL), fallback: "未填写")
-                    summaryRow("模型", value: trimmed(appState.settings.model), fallback: "未填写")
-                    summaryRow("密钥", value: appState.settings.apiKey.isEmpty ? "" : "已填写", fallback: "未填写")
-                }
-            }
-        }
-    }
-
-    private var translationPage: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            settingsGroup("语言与快捷键") {
-                settingsField("源语言", systemImage: "text.magnifyingglass") {
-                    Picker("", selection: $appState.settings.sourceLanguage) {
-                        ForEach(SupportedLanguages.source, id: \.self) { language in
-                            Text(language)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(maxWidth: 220)
-                }
-
-                settingsDivider
-
-                settingsField("目标语言", systemImage: "character.book.closed") {
-                    Picker("", selection: $appState.settings.targetLanguage) {
-                        ForEach(SupportedLanguages.target, id: \.self) { language in
-                            Text(language)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(maxWidth: 220)
-                }
-
-                settingsDivider
-
-                settingsField("全局快捷键", systemImage: "keyboard") {
-                    TextField("⌥D", text: $appState.settings.shortcutDisplay)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 130)
-                }
-            }
-
-            settingsGroup("启动与权限") {
-                Toggle(isOn: $appState.settings.launchAtLogin) {
-                    Label("登录后自动启动", systemImage: "power")
-                }
-                .toggleStyle(.switch)
-
-                settingsDivider
-
-                PermissionsGuideView()
-            }
-        }
-    }
-
-    private var promptsPage: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 18) {
-                promptList
-                    .frame(width: 230)
-
-                promptDetails
-                    .frame(maxWidth: .infinity)
-            }
-
-            promptEditor
-        }
-    }
-
-    private var promptList: some View {
-        settingsGroup("Prompt 版本") {
-            VStack(spacing: 6) {
-                ForEach(appState.settings.promptVersions) { version in
-                    promptVersionButton(version)
-                }
-
-                Button {
-                    selectedPromptID = appState.addPromptVersion()
-                } label: {
-                    Label("新增版本", systemImage: "plus")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .frame(height: 34)
-                }
-                .buttonStyle(.borderless)
-            }
-        }
-    }
-
-    private func promptVersionButton(_ version: PromptVersion) -> some View {
-        Button {
-            selectedPromptID = version.id
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: appState.settings.activePromptVersionID == version.id ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(appState.settings.activePromptVersionID == version.id ? SettingsPalette.success : .secondary)
-
-                Text(version.name)
-                    .lineLimit(1)
-
-                Spacer(minLength: 4)
-            }
+    private func emptyState(_ title: String) -> some View {
+        Text(title)
             .font(.system(size: 13, weight: .medium))
-            .padding(.horizontal, 10)
-            .frame(height: 34)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(selectedPromptID == version.id ? SettingsPalette.selection.opacity(0.12) : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var promptDetails: some View {
-        if let prompt = selectedPromptBinding {
-            settingsGroup("版本信息") {
-                settingsField("名称", systemImage: "tag") {
-                    TextField("版本名称", text: prompt.name)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                settingsDivider
-
-                settingsField("状态", systemImage: "checkmark.seal") {
-                    HStack(spacing: 10) {
-                        if appState.settings.activePromptVersionID == prompt.wrappedValue.id {
-                            Label("已激活", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(SettingsPalette.success)
-                                .font(.system(size: 13, weight: .semibold))
-                        } else {
-                            Button {
-                                appState.activatePromptVersion(id: prompt.wrappedValue.id)
-                            } label: {
-                                Label("设为当前", systemImage: "checkmark")
-                            }
-                        }
-
-                        Button(role: .destructive) {
-                            appState.deletePromptVersion(id: prompt.wrappedValue.id)
-                            selectedPromptID = appState.settings.activePromptVersionID
-                        } label: {
-                            Label("删除", systemImage: "trash")
-                        }
-                        .disabled(appState.settings.promptVersions.count <= 1)
-                    }
-                }
-            }
-        } else {
-            emptyPromptState
-        }
-    }
-
-    @ViewBuilder
-    private var promptEditor: some View {
-        if let prompt = selectedPromptBinding {
-            settingsGroup("Prompt 内容", footer: "使用 {{selectedText}} 表示当前选中的文本；未包含该变量时，选中文本会自动追加到 Prompt 末尾。") {
-                TextEditor(text: prompt.content)
-                    .font(.system(.body, design: .monospaced))
-                    .scrollContentBackground(.hidden)
-                    .padding(10)
-                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(SettingsPalette.border)
-                    )
-                    .frame(minHeight: 300)
-            }
-        } else {
-            emptyPromptState
-        }
-    }
-
-    private var emptyPromptState: some View {
-        VStack(alignment: .center, spacing: 8) {
-            Image(systemName: "text.quote")
-                .font(.system(size: 24))
-                .foregroundStyle(.secondary)
-            Text("没有可编辑的 Prompt")
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 160)
-        .background(SettingsPalette.panel, in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func settingsGroup<Content: View>(
-        _ title: String,
-        footer: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-
-            VStack(alignment: .leading, spacing: 0) {
-                content()
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 120)
             .background(SettingsPalette.panel, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(SettingsPalette.border)
-            )
+    }
 
-            if let footer {
-                Text(footer)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+    private var selectedModelBinding: Binding<ModelVersion>? {
+        let id = selectedModelID ?? appState.settings.activeModelVersionID
+        guard appState.settings.modelVersions.contains(where: { $0.id == id }) else {
+            return nil
+        }
+
+        return Binding(
+            get: {
+                appState.settings.modelVersions.first { $0.id == id } ?? appState.settings.modelVersions[0]
+            },
+            set: { updatedVersion in
+                guard let index = appState.settings.modelVersions.firstIndex(where: { $0.id == id }) else {
+                    return
+                }
+                appState.settings.modelVersions[index] = updatedVersion
             }
-        }
-    }
-
-    private func settingsField<Content: View>(
-        _ title: String,
-        systemImage: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 136, alignment: .leading)
-
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(minHeight: 40)
-    }
-
-    private func summaryRow(_ title: String, value: String, fallback: String) -> some View {
-        HStack(spacing: 12) {
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 88, alignment: .leading)
-
-            Text(value.isEmpty ? fallback : value)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(value.isEmpty ? .secondary : .primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-    }
-
-    private var settingsDivider: some View {
-        Divider()
-            .padding(.leading, 150)
-            .padding(.vertical, 8)
+        )
     }
 
     private var selectedPromptBinding: Binding<PromptVersion>? {
@@ -446,110 +487,56 @@ struct SettingsView: View {
             }
         )
     }
-
-    private var serviceStatus: SettingsStatus {
-        let hasURL = !trimmed(appState.settings.baseURL).isEmpty
-        let hasModel = !trimmed(appState.settings.model).isEmpty
-        let hasKey = !appState.settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-
-        if hasURL && hasModel && hasKey {
-            return SettingsStatus(
-                title: "服务已配置",
-                message: "翻译请求可以使用当前模型服务。",
-                symbolName: "checkmark.circle.fill",
-                color: SettingsPalette.success
-            )
-        }
-
-        return SettingsStatus(
-            title: "仍需配置",
-            message: "请补全服务地址、API Key 与模型名称。",
-            symbolName: "exclamationmark.triangle.fill",
-            color: SettingsPalette.warning
-        )
-    }
-
-    private func trimmed(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }
 
 private enum SettingsPage: CaseIterable, Identifiable {
-    case service
-    case translation
+    case general
+    case models
     case prompts
 
     var id: Self { self }
 
     var title: String {
         switch self {
-        case .service:
-            return "模型服务"
-        case .translation:
-            return "翻译体验"
+        case .general:
+            return "常规"
+        case .models:
+            return "模型"
         case .prompts:
-            return "Prompt"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .service:
-            return "接口、密钥、模型"
-        case .translation:
-            return "语言、快捷键、权限"
-        case .prompts:
-            return "版本与模板"
-        }
-    }
-
-    var description: String {
-        switch self {
-        case .service:
-            return "配置翻译请求使用的兼容 OpenAI 接口。"
-        case .translation:
-            return "调整默认语言、启动行为和系统权限提示。"
-        case .prompts:
-            return "维护多版本 Prompt，并选择当前生效版本。"
+            return "提示词"
         }
     }
 
     var symbolName: String {
         switch self {
-        case .service:
-            return "server.rack"
-        case .translation:
-            return "character.cursor.ibeam"
+        case .general:
+            return "gearshape"
+        case .models:
+            return "cpu"
         case .prompts:
             return "text.quote"
         }
     }
-
-    var tint: Color {
-        switch self {
-        case .service:
-            return Color(red: 0.02, green: 0.42, blue: 0.66)
-        case .translation:
-            return Color(red: 0.34, green: 0.43, blue: 0.14)
-        case .prompts:
-            return Color(red: 0.58, green: 0.25, blue: 0.18)
-        }
-    }
-}
-
-private struct SettingsStatus {
-    let title: String
-    let message: String
-    let symbolName: String
-    let color: Color
 }
 
 private enum SettingsPalette {
     static let background = Color(nsColor: .windowBackgroundColor)
-    static let sidebar = Color(nsColor: .windowBackgroundColor).opacity(0.96)
-    static let panel = Color(nsColor: .controlBackgroundColor).opacity(0.82)
-    static let border = Color(nsColor: .separatorColor).opacity(0.34)
-    static let selection = Color(red: 0.12, green: 0.43, blue: 0.64)
-    static let success = Color(red: 0.12, green: 0.52, blue: 0.27)
-    static let warning = Color(red: 0.78, green: 0.44, blue: 0.12)
+    static let sidebar = Color(nsColor: .controlBackgroundColor).opacity(0.58)
+    static let panel = Color(nsColor: .controlBackgroundColor).opacity(0.72)
+    static let border = Color(nsColor: .separatorColor).opacity(0.28)
+    static let selection = Color(nsColor: NSColor(name: nil) { appearance in
+        let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+        return match == .darkAqua
+            ? NSColor(red: 0x38 / 255, green: 0x38 / 255, blue: 0x39 / 255, alpha: 1)
+            : NSColor(red: 0xe6 / 255, green: 0xe6 / 255, blue: 0xe7 / 255, alpha: 1)
+    })
+    static let hover = selection
+    static let accent = Color(nsColor: .controlAccentColor)
 }
+
+#if DEBUG
+#Preview("设置窗口") {
+    SettingsView(appState: .settingsPreview)
+        .frame(width: 920, height: 620)
+}
+#endif

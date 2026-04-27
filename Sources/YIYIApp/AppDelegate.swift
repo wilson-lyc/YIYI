@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -9,8 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var didPositionFloatingPanel = false
     private var hotKeyRegistrar: GlobalHotKeyRegistrar?
+    private var settingsCancellable: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        observeAppearancePreference()
         configureStatusBar()
         configureGlobalHotKey()
         SelectedTextReader.requestAccessibilityPermissionIfNeeded()
@@ -96,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.backgroundColor = .clear
 
             let visualEffectView = NSVisualEffectView()
-            visualEffectView.material = .hudWindow
+            visualEffectView.material = .popover
             visualEffectView.blendingMode = .behindWindow
             visualEffectView.state = .active
 
@@ -165,5 +168,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow?.center()
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func observeAppearancePreference() {
+        settingsCancellable = appState.$settings
+            .map(\.appearancePreference)
+            .removeDuplicates()
+            .sink { [weak self] preference in
+                self?.applyAppearance(preference)
+            }
+    }
+
+    private func applyAppearance(_ preference: AppearancePreference) {
+        NSApp.appearance = preference.nsAppearance
+    }
+}
+
+private extension AppearancePreference {
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system:
+            return nil
+        case .light:
+            return NSAppearance(named: .aqua)
+        case .dark:
+            return NSAppearance(named: .darkAqua)
+        }
     }
 }
