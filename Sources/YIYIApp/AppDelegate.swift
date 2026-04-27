@@ -13,10 +13,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsCancellable: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        configureMainMenu()
         observeAppearancePreference()
         configureStatusBar()
         configureGlobalHotKey()
         SelectedTextReader.requestAccessibilityPermissionIfNeeded()
+    }
+
+    private func configureMainMenu() {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ","))
+        appMenu.addItem(.separator())
+        appMenu.addItem(NSMenuItem(title: "退出易译", action: #selector(quit), keyEquivalent: "q"))
+        appMenu.items.forEach { $0.target = self }
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(NSMenuItem(title: "撤销", action: NSSelectorFromString("undo:"), keyEquivalent: "z"))
+
+        let redoItem = NSMenuItem(title: "重做", action: NSSelectorFromString("redo:"), keyEquivalent: "Z")
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redoItem)
+
+        editMenu.addItem(.separator())
+        editMenu.addItem(NSMenuItem(title: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: "复制", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+
+        let pasteAndMatchStyleItem = NSMenuItem(
+            title: "粘贴并匹配样式",
+            action: #selector(NSTextView.pasteAsPlainText(_:)),
+            keyEquivalent: "V"
+        )
+        pasteAndMatchStyleItem.keyEquivalentModifierMask = [.command, .option, .shift]
+        editMenu.addItem(pasteAndMatchStyleItem)
+
+        editMenu.addItem(NSMenuItem(title: "删除", action: #selector(NSText.delete(_:)), keyEquivalent: ""))
+        editMenu.addItem(.separator())
+        editMenu.addItem(NSMenuItem(title: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editMenu.items.forEach { $0.target = nil }
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        NSApp.mainMenu = mainMenu
     }
 
     private func configureStatusBar() {
@@ -26,13 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.title = " 易译"
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "打开翻译浮窗", action: #selector(openFloatingPanel), keyEquivalent: "t"))
-        let captureItem = NSMenuItem(title: "提取选中文本", action: #selector(captureSelectedText), keyEquivalent: "d")
-        captureItem.keyEquivalentModifierMask = [.option]
-        menu.addItem(captureItem)
-        menu.addItem(NSMenuItem(title: "重新翻译当前文本", action: #selector(refreshTranslation), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ","))
-        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "退出易译", action: #selector(quit), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
         item.menu = menu
@@ -153,13 +191,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showSettingsWindow() {
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                contentRect: NSRect(x: 0, y: 0, width: 900, height: 680),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
             window.title = "易译设置"
             window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.minSize = NSSize(width: 840, height: 660)
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: SettingsView(appState: appState))
             settingsWindow = window

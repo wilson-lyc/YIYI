@@ -116,16 +116,13 @@ final class AppState: ObservableObject {
     }
 
     func addModelVersion() -> UUID {
-        let activeModel = settings.activeModelVersion
-        let nextIndex = settings.modelVersions.count + 1
         let version = ModelVersion(
-            name: "模型 \(nextIndex)",
-            baseURL: activeModel.baseURL,
-            apiKey: activeModel.apiKey,
-            modelName: activeModel.modelName
+            name: "新模型",
+            baseURL: "",
+            apiKey: "",
+            modelName: ""
         )
         settings.modelVersions.append(version)
-        settings.activeModelVersionID = version.id
         return version.id
     }
 

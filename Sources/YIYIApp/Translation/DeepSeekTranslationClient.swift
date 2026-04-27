@@ -41,6 +41,33 @@ struct DeepSeekTranslationClient {
         return translation
     }
 
+    func testConnection(with model: ModelVersion) async throws {
+        let apiKey = model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apiKey.isEmpty else {
+            throw TranslationError.missingAPIKey
+        }
+
+        var request = URLRequest(url: try chatCompletionsURL(for: model))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(testRequestBody(for: model))
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw TranslationError.invalidResponse
+        }
+
+        guard 200..<300 ~= httpResponse.statusCode else {
+            throw TranslationError.apiError(statusCode: httpResponse.statusCode, message: decodeAPIError(from: data))
+        }
+
+        let completion = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
+        guard completion.choices.first?.message.content != nil else {
+            throw TranslationError.emptyResult
+        }
+    }
+
     private func chatCompletionsURL(for model: ModelVersion) throws -> URL {
         let trimmedBaseURL = model.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var components = URLComponents(string: trimmedBaseURL), components.scheme != nil, components.host != nil else {
@@ -70,6 +97,17 @@ struct DeepSeekTranslationClient {
             ],
             stream: false,
             temperature: 0.2
+        )
+    }
+
+    private func testRequestBody(for model: ModelVersion) -> ChatCompletionRequest {
+        ChatCompletionRequest(
+            model: model.modelName.trimmingCharacters(in: .whitespacesAndNewlines),
+            messages: [
+                .init(role: "user", content: "hello")
+            ],
+            stream: false,
+            temperature: 0
         )
     }
 
