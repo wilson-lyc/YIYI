@@ -3,6 +3,7 @@ import Foundation
 struct DeepSeekTranslationClient {
     private let settings: AppSettings
     private let session: URLSession
+    private static let requestTimeout: TimeInterval = 45
 
     init(settings: AppSettings, session: URLSession = .shared) {
         self.settings = settings
@@ -18,11 +19,19 @@ struct DeepSeekTranslationClient {
 
         var request = URLRequest(url: try chatCompletionsURL(for: model))
         request.httpMethod = "POST"
+        request.timeoutInterval = Self.requestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(requestBody(for: text))
+        request.httpBody = try requestBodyData(
+            for: model,
+            messages: [
+                .init(role: "system", content: settings.renderedSystemPrompt()),
+                .init(role: "user", content: settings.renderedPrompt(for: text))
+            ],
+            temperature: 0.2
+        )
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await send(request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw TranslationError.invalidResponse
         }
@@ -49,11 +58,18 @@ struct DeepSeekTranslationClient {
 
         var request = URLRequest(url: try chatCompletionsURL(for: model))
         request.httpMethod = "POST"
+        request.timeoutInterval = Self.requestTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(testRequestBody(for: model))
+        request.httpBody = try requestBodyData(
+            for: model,
+            messages: [
+                .init(role: "user", content: "hello")
+            ],
+            temperature: 0
+        )
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await send(request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw TranslationError.invalidResponse
         }
@@ -74,10 +90,13 @@ struct DeepSeekTranslationClient {
             throw TranslationError.invalidBaseURL
         }
 
-        let basePath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        components.path = "/" + ([basePath, "chat", "completions"]
-            .filter { !$0.isEmpty }
-            .joined(separator: "/"))
+        let pathComponents = components.path
+            .split(separator: "/")
+            .map(String.init)
+
+        if pathComponents.suffix(2) != ["chat", "completions"] {
+            components.path = "/" + (pathComponents + ["chat", "completions"]).joined(separator: "/")
+        }
 
         guard let url = components.url else {
             throw TranslationError.invalidBaseURL
@@ -86,29 +105,48 @@ struct DeepSeekTranslationClient {
         return url
     }
 
-    private func requestBody(for text: String) -> ChatCompletionRequest {
-        let model = settings.activeModelVersion
-
-        return ChatCompletionRequest(
-            model: model.modelName.trimmingCharacters(in: .whitespacesAndNewlines),
-            messages: [
-                .init(role: "system", content: settings.renderedSystemPrompt()),
-                .init(role: "user", content: settings.renderedPrompt(for: text))
-            ],
-            stream: false,
-            temperature: 0.2
-        )
+    private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch let error as URLError {
+            throw TranslationError.network(error)
+        }
     }
 
-    private func testRequestBody(for model: ModelVersion) -> ChatCompletionRequest {
-        ChatCompletionRequest(
+    private func requestBodyData(for model: ModelVersion, messages: [ChatMessage], temperature: Double) throws -> Data {
+        let request = ChatCompletionRequest(
             model: model.modelName.trimmingCharacters(in: .whitespacesAndNewlines),
-            messages: [
-                .init(role: "user", content: "hello")
-            ],
+            messages: messages,
             stream: false,
-            temperature: 0
+            temperature: temperature
         )
+
+        let baseData = try JSONEncoder().encode(request)
+        guard var body = try JSONSerialization.jsonObject(with: baseData) as? [String: Any] else {
+            throw TranslationError.invalidResponse
+        }
+
+        try mergeExtraBodyJSON(from: model, into: &body)
+        return try JSONSerialization.data(withJSONObject: body)
+    }
+
+    private func mergeExtraBodyJSON(from model: ModelVersion, into body: inout [String: Any]) throws {
+        let json = model.extraBodyJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !json.isEmpty else {
+            return
+        }
+
+        guard let data = json.data(using: .utf8) else {
+            throw TranslationError.invalidExtraBodyJSON
+        }
+
+        guard let extraBody = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw TranslationError.invalidExtraBodyJSON
+        }
+
+        for (key, value) in extraBody {
+            body[key] = value
+        }
     }
 
     private func decodeAPIError(from data: Data) -> String? {
@@ -124,25 +162,50 @@ enum TranslationError: LocalizedError {
     case missingAPIKey
     case invalidBaseURL
     case invalidResponse
+    case invalidExtraBodyJSON
     case emptyResult
+    case network(URLError)
     case apiError(statusCode: Int, message: String?)
 
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "请先配置 API Key。"
+            return "翻译失败，请先配置 API Key。"
         case .invalidBaseURL:
-            return "Base URL 无效。"
+            return "翻译失败，服务地址无效。"
         case .invalidResponse:
-            return "模型服务返回了无效响应。"
+            return "服务异常，返回内容无法识别。"
+        case .invalidExtraBodyJSON:
+            return "翻译失败，请检查请求 JSON 格式。"
         case .emptyResult:
-            return "模型服务未返回译文。"
+            return "翻译失败，服务没有返回译文。"
+        case let .network(error):
+            return Self.networkErrorDescription(for: error)
         case let .apiError(statusCode, message):
             if let message, !message.isEmpty {
-                return "模型服务请求失败（HTTP \(statusCode)）：\(message)"
+                return "服务异常（HTTP \(statusCode)）：\(message)"
             }
 
-            return "模型服务请求失败（HTTP \(statusCode)）。"
+            return "服务异常（HTTP \(statusCode)）。"
+        }
+    }
+
+    private static func networkErrorDescription(for error: URLError) -> String {
+        switch error.code {
+        case .timedOut:
+            return "翻译超时，暂时没有收到结果。"
+        case .notConnectedToInternet:
+            return "翻译失败，当前没有网络连接。"
+        case .cannotFindHost, .dnsLookupFailed:
+            return "翻译失败，服务地址无法访问。"
+        case .cannotConnectToHost:
+            return "服务异常，暂时无法连接。"
+        case .networkConnectionLost:
+            return "翻译中断，网络连接已断开。"
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid:
+            return "服务异常，安全连接失败。"
+        default:
+            return "翻译失败：\(error.localizedDescription)"
         }
     }
 }

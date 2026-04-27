@@ -17,7 +17,7 @@ struct TranslationPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            languageBar
+            headerBar
             translationBody
             actionBar
         }
@@ -31,7 +31,7 @@ struct TranslationPanelView: View {
         }
     }
 
-    private var languageBar: some View {
+    private var headerBar: some View {
         HStack(spacing: 8) {
             languagePicker(selection: $appState.settings.sourceLanguage, options: SupportedLanguages.source)
                 .frame(width: 128)
@@ -52,11 +52,17 @@ struct TranslationPanelView: View {
                     Text(message)
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.orange)
-                } else if appState.status == .loading {
-                    VStack(alignment: .leading, spacing: 5) {
-                        loadingBar(width: 210)
-                        loadingBar(width: 285)
-                        loadingBar(width: 170)
+                } else if case let .loading(message) = appState.status {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(message)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.secondary)
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            loadingBar(width: 210)
+                            loadingBar(width: 285)
+                            loadingBar(width: 170)
+                        }
                     }
                     .padding(.top, 3)
                     .opacity(loadingPulse ? 0.42 : 1)
@@ -86,7 +92,7 @@ struct TranslationPanelView: View {
         HStack(spacing: 4) {
             IconActionButton(systemName: showsCopiedMessage ? "checkmark" : "doc.on.doc", action: copyTranslation)
             .help("复制")
-            .disabled(appState.translatedText.isEmpty || appState.status == .loading)
+            .disabled(appState.translatedText.isEmpty || appState.status.isLoading)
 
             IconActionButton(
                 systemName: refreshIconName,

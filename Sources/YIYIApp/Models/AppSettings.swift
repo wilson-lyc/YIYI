@@ -6,6 +6,33 @@ struct ModelVersion: Identifiable, Codable, Equatable {
     var baseURL: String
     var apiKey: String
     var modelName: String
+    var extraBodyJSON: String
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        baseURL: String,
+        apiKey: String,
+        modelName: String,
+        extraBodyJSON: String = ""
+    ) {
+        self.id = id
+        self.name = name
+        self.baseURL = baseURL
+        self.apiKey = apiKey
+        self.modelName = modelName
+        self.extraBodyJSON = extraBodyJSON
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "默认模型"
+        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? ""
+        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        modelName = try container.decodeIfPresent(String.self, forKey: .modelName) ?? ""
+        extraBodyJSON = try container.decodeIfPresent(String.self, forKey: .extraBodyJSON) ?? ""
+    }
 }
 
 struct PromptVersion: Identifiable, Decodable, Equatable {
@@ -324,7 +351,8 @@ private enum AppSettingsStore {
                     name: name,
                     baseURL: baseURL,
                     apiKey: document.string(section, "api_key") ?? "",
-                    modelName: modelName
+                    modelName: modelName,
+                    extraBodyJSON: document.string(section, "extra_body_json") ?? ""
                 )
             }
 
@@ -344,7 +372,8 @@ private enum AppSettingsStore {
                 name: "默认模型",
                 baseURL: baseURL,
                 apiKey: document.string("llm", "api_key") ?? "",
-                modelName: modelName
+                modelName: modelName,
+                extraBodyJSON: document.string("llm", "extra_body_json") ?? ""
             )
         ]
     }
@@ -436,6 +465,7 @@ private enum AppSettingsStore {
             lines.append("base_url = \(tomlString(model.baseURL))")
             lines.append("api_key = \(tomlString(model.apiKey))")
             lines.append("model = \(tomlString(model.modelName))")
+            lines.append("extra_body_json = \(tomlString(model.extraBodyJSON))")
         }
 
         lines.append("")

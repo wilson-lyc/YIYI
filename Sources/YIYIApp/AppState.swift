@@ -32,7 +32,7 @@ final class AppState: ObservableObject {
     }
 
     func beginTranslation() {
-        status = .loading
+        status = .loading("准备翻译……")
         translatedText = ""
     }
 
@@ -56,13 +56,18 @@ final class AppState: ObservableObject {
             throw SelectedTextReader.ReadError.emptySelection
         }
 
-        status = .loading
+        status = .loading("翻译中……")
+        let progressTask = showTranslationProgressMessages()
+        defer {
+            progressTask.cancel()
+        }
+
         translatedText = try await DeepSeekTranslationClient(settings: settings).translate(text)
         status = .translated
     }
 
     func refreshTranslation() {
-        status = .loading
+        status = .loading("重新翻译中……")
         translatedText = ""
 
         Task { @MainActor in
@@ -77,6 +82,22 @@ final class AppState: ObservableObject {
 
     func showEmptySelectionHint() {
         status = .error("未检测到选中文本。请先在任意应用中选中文本，再按 \(settings.shortcutDisplay)。")
+    }
+
+    private func showTranslationProgressMessages() -> Task<Void, Never> {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, status.isLoading else {
+                return
+            }
+            status = .loading("正在等待结果……")
+
+            try? await Task.sleep(for: .seconds(13))
+            guard !Task.isCancelled, status.isLoading else {
+                return
+            }
+            status = .loading("还在翻译，请稍候……")
+        }
     }
 
     func addPromptVersion() -> UUID {
@@ -120,7 +141,8 @@ final class AppState: ObservableObject {
             name: "新模型",
             baseURL: "",
             apiKey: "",
-            modelName: ""
+            modelName: "",
+            extraBodyJSON: ""
         )
         settings.modelVersions.append(version)
         return version.id
@@ -148,9 +170,17 @@ final class AppState: ObservableObject {
 
 enum TranslationStatus: Equatable {
     case ready
-    case loading
+    case loading(String)
     case translated
     case error(String)
+
+    var isLoading: Bool {
+        if case .loading = self {
+            return true
+        }
+
+        return false
+    }
 }
 
 #if DEBUG
@@ -176,7 +206,7 @@ extension AppState {
         AppState(
             originalText: "Preview the loading state without making a network request.",
             translatedText: "",
-            status: .loading,
+            status: .loading("正在等待结果……"),
             settings: .previewConfigured,
             persistsSettings: false
         )
@@ -186,7 +216,7 @@ extension AppState {
         AppState(
             originalText: "This text failed to translate.",
             translatedText: "",
-            status: .error("请求失败：请检查 API Key、Base URL 或网络连接。"),
+            status: .error("翻译失败，请检查模型设置或网络连接。"),
             settings: .previewConfigured,
             persistsSettings: false
         )

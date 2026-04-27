@@ -196,6 +196,16 @@ struct SettingsView: View {
                     TextField("模型名称", text: model.modelName)
                         .textFieldStyle(.roundedBorder)
                 }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("请求 JSON")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    editor(text: model.extraBodyJSON, height: 96)
+                        .help(#"例如 {"thinking":{"type":"disabled"}}"#)
+                }
             }
 
             modelActionRow(
@@ -220,6 +230,9 @@ struct SettingsView: View {
             modelConnectionTestState = .idle
         }
         .onChange(of: model.wrappedValue.modelName) {
+            modelConnectionTestState = .idle
+        }
+        .onChange(of: model.wrappedValue.extraBodyJSON) {
             modelConnectionTestState = .idle
         }
     }
