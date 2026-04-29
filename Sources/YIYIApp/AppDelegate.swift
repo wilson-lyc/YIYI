@@ -9,16 +9,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var floatingPanel: NSPanel?
     private var settingsWindow: NSWindow?
     private var didPositionFloatingPanel = false
-    private var hotKeyRegistrar: GlobalHotKeyRegistrar?
     private var settingsCancellable: AnyCancellable?
-    private var hotKeyCancellable: AnyCancellable?
+    private var hotKeyController: GlobalHotKeyController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMainMenu()
         observeAppearancePreference()
-        observeShortcutPreference()
         configureStatusBar()
-        configureGlobalHotKey()
+        configureGlobalHotKeyController()
         SelectedTextReader.requestAccessibilityPermissionIfNeeded()
     }
 
@@ -80,20 +78,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
     }
 
-    private func configureGlobalHotKey() {
-        hotKeyRegistrar?.unregister()
-        let shortcut = AppShortcut(
-            keyCode: appState.settings.shortcutKeyCode,
-            modifiers: appState.settings.shortcutModifiers,
-            display: appState.settings.shortcutDisplay
-        )
-        let registrar = GlobalHotKeyRegistrar(shortcut: shortcut) { [weak self] in
-            DispatchQueue.main.async {
+    private func configureGlobalHotKeyController() {
+        let controller = GlobalHotKeyController(
+            appState: appState,
+            onTrigger: { [weak self] in
                 self?.startSelectedTextCaptureFlow()
+            },
+            onConflict: { [weak self] shortcut in
+                self?.showShortcutConflictAlert(for: shortcut)
             }
-        }
-        registrar.register()
-        hotKeyRegistrar = registrar
+        )
+        controller.start()
+        hotKeyController = controller
     }
 
     @objc private func openFloatingPanel() {
@@ -221,6 +217,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private func showShortcutConflictAlert(for shortcut: AppShortcut) {
+        Task { @MainActor in
+            showSettingsWindow()
+
+            let alert = NSAlert()
+            alert.messageText = "快捷键 \(shortcut.display) 已被占用"
+            alert.informativeText = "易译无法注册当前划词翻译快捷键。请在设置中换绑一个未被其他应用或系统占用的快捷键。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "去换绑")
+            alert.runModal()
+        }
+    }
+
     private func observeAppearancePreference() {
         settingsCancellable = appState.$settings
             .map(\.appearancePreference)
@@ -230,26 +239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
     }
 
-    private func observeShortcutPreference() {
-        hotKeyCancellable = appState.$settings
-            .map { settings in
-                HotKeyPreference(keyCode: settings.shortcutKeyCode, modifiers: settings.shortcutModifiers)
-            }
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] _ in
-                self?.configureGlobalHotKey()
-            }
-    }
-
     private func applyAppearance(_ preference: AppearancePreference) {
         NSApp.appearance = preference.nsAppearance
     }
-}
-
-private struct HotKeyPreference: Equatable {
-    let keyCode: UInt32
-    let modifiers: UInt32
 }
 
 private extension AppearancePreference {

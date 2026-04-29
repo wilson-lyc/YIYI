@@ -92,6 +92,14 @@ final class AppState: ObservableObject {
         status = .error("未检测到选中文本。请先在任意应用中选中文本，再按 \(settings.shortcutDisplay)。")
     }
 
+    func updateShortcut(_ shortcut: AppShortcut) {
+        var updatedSettings = settings
+        updatedSettings.shortcutDisplay = shortcut.display
+        updatedSettings.shortcutKeyCode = shortcut.keyCode
+        updatedSettings.shortcutModifiers = shortcut.modifiers
+        settings = updatedSettings
+    }
+
     private func showTranslationProgressMessages() -> Task<Void, Never> {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
