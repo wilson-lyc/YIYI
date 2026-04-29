@@ -23,6 +23,10 @@ final class GlobalHotKeyRegistrar {
         self.action = action
     }
 
+    convenience init(shortcut: AppShortcut, action: @escaping () -> Void) {
+        self.init(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, action: action)
+    }
+
     deinit {
         unregister()
     }

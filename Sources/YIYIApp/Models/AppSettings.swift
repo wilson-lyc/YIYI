@@ -1,5 +1,13 @@
 import Foundation
 
+struct AppShortcut: Codable, Equatable {
+    static let defaultTranslation = AppShortcut(keyCode: 2, modifiers: 2048, display: "⌥D")
+
+    var keyCode: UInt32
+    var modifiers: UInt32
+    var display: String
+}
+
 struct ModelVersion: Identifiable, Codable, Equatable {
     var id = UUID()
     var name: String
@@ -74,6 +82,8 @@ struct AppSettings: Decodable, Equatable {
     var sourceLanguage = "自动识别"
     var targetLanguage = "简体中文"
     var shortcutDisplay = "⌥D"
+    var shortcutKeyCode = AppShortcut.defaultTranslation.keyCode
+    var shortcutModifiers = AppShortcut.defaultTranslation.modifiers
     var appearancePreference = AppearancePreference.system
     var launchAtLogin = false
     var requestTimeoutSeconds = Self.defaultRequestTimeoutSeconds
@@ -86,6 +96,8 @@ struct AppSettings: Decodable, Equatable {
         sourceLanguage: String = "自动识别",
         targetLanguage: String = "简体中文",
         shortcutDisplay: String = "⌥D",
+        shortcutKeyCode: UInt32 = AppShortcut.defaultTranslation.keyCode,
+        shortcutModifiers: UInt32 = AppShortcut.defaultTranslation.modifiers,
         appearancePreference: AppearancePreference = .system,
         launchAtLogin: Bool = false,
         requestTimeoutSeconds: Int = AppSettings.defaultRequestTimeoutSeconds,
@@ -97,6 +109,8 @@ struct AppSettings: Decodable, Equatable {
         self.sourceLanguage = sourceLanguage
         self.targetLanguage = targetLanguage
         self.shortcutDisplay = shortcutDisplay
+        self.shortcutKeyCode = shortcutKeyCode
+        self.shortcutModifiers = shortcutModifiers
         self.appearancePreference = appearancePreference
         self.launchAtLogin = launchAtLogin
         self.requestTimeoutSeconds = requestTimeoutSeconds
@@ -111,6 +125,8 @@ struct AppSettings: Decodable, Equatable {
         sourceLanguage = try container.decodeIfPresent(String.self, forKey: .sourceLanguage) ?? "自动识别"
         targetLanguage = try container.decodeIfPresent(String.self, forKey: .targetLanguage) ?? "简体中文"
         shortcutDisplay = try container.decodeIfPresent(String.self, forKey: .shortcutDisplay) ?? "⌥D"
+        shortcutKeyCode = try container.decodeIfPresent(UInt32.self, forKey: .shortcutKeyCode) ?? AppShortcut.defaultTranslation.keyCode
+        shortcutModifiers = try container.decodeIfPresent(UInt32.self, forKey: .shortcutModifiers) ?? AppShortcut.defaultTranslation.modifiers
         appearancePreference = try container.decodeIfPresent(AppearancePreference.self, forKey: .appearancePreference) ?? .system
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         requestTimeoutSeconds = try container.decodeIfPresent(Int.self, forKey: .requestTimeoutSeconds) ?? Self.defaultRequestTimeoutSeconds
@@ -237,6 +253,15 @@ struct AppSettings: Decodable, Equatable {
         }
 
         settings.requestTimeoutSeconds = Self.clampedRequestTimeoutSeconds(settings.requestTimeoutSeconds)
+        if settings.shortcutDisplay.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            settings.shortcutDisplay = AppShortcut.defaultTranslation.display
+        }
+
+        if settings.shortcutKeyCode == 0 || settings.shortcutModifiers == 0 {
+            settings.shortcutKeyCode = AppShortcut.defaultTranslation.keyCode
+            settings.shortcutModifiers = AppShortcut.defaultTranslation.modifiers
+            settings.shortcutDisplay = AppShortcut.defaultTranslation.display
+        }
 
         return settings
     }
@@ -262,6 +287,8 @@ struct AppSettings: Decodable, Equatable {
         case sourceLanguage
         case targetLanguage
         case shortcutDisplay
+        case shortcutKeyCode
+        case shortcutModifiers
         case appearancePreference
         case launchAtLogin
         case requestTimeoutSeconds
@@ -351,6 +378,8 @@ private enum AppSettingsStore {
             sourceLanguage: document.string("translation", "source_language") ?? "自动识别",
             targetLanguage: document.string("translation", "target_language") ?? "简体中文",
             shortcutDisplay: document.string(nil, "shortcut") ?? "⌥D",
+            shortcutKeyCode: UInt32(document.int(nil, "shortcut_key_code") ?? Int(AppShortcut.defaultTranslation.keyCode)),
+            shortcutModifiers: UInt32(document.int(nil, "shortcut_modifiers") ?? Int(AppShortcut.defaultTranslation.modifiers)),
             appearancePreference: AppearancePreference(rawValue: document.string(nil, "appearance") ?? "") ?? .system,
             launchAtLogin: document.bool(nil, "launch_at_login") ?? false,
             requestTimeoutSeconds: document.int(nil, "request_timeout_seconds") ?? AppSettings.defaultRequestTimeoutSeconds,
@@ -486,6 +515,8 @@ private enum AppSettingsStore {
         var lines = [
             "appearance = \(tomlString(settings.appearancePreference.rawValue))",
             "shortcut = \(tomlString(settings.shortcutDisplay))",
+            "shortcut_key_code = \(settings.shortcutKeyCode)",
+            "shortcut_modifiers = \(settings.shortcutModifiers)",
             "launch_at_login = \(settings.launchAtLogin ? "true" : "false")",
             "request_timeout_seconds = \(settings.requestTimeoutSeconds)",
             "",

@@ -11,10 +11,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var didPositionFloatingPanel = false
     private var hotKeyRegistrar: GlobalHotKeyRegistrar?
     private var settingsCancellable: AnyCancellable?
+    private var hotKeyCancellable: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureMainMenu()
         observeAppearancePreference()
+        observeShortcutPreference()
         configureStatusBar()
         configureGlobalHotKey()
         SelectedTextReader.requestAccessibilityPermissionIfNeeded()
@@ -25,9 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ","))
+        appMenu.addItem(NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ""))
         appMenu.addItem(.separator())
-        appMenu.addItem(NSMenuItem(title: "退出易译", action: #selector(quit), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
         appMenu.items.forEach { $0.target = self }
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
@@ -70,8 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.title = " 易译"
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "退出易译", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
         item.menu = menu
 
@@ -79,7 +81,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureGlobalHotKey() {
-        let registrar = GlobalHotKeyRegistrar { [weak self] in
+        hotKeyRegistrar?.unregister()
+        let shortcut = AppShortcut(
+            keyCode: appState.settings.shortcutKeyCode,
+            modifiers: appState.settings.shortcutModifiers,
+            display: appState.settings.shortcutDisplay
+        )
+        let registrar = GlobalHotKeyRegistrar(shortcut: shortcut) { [weak self] in
             DispatchQueue.main.async {
                 self?.startSelectedTextCaptureFlow()
             }
@@ -222,9 +230,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
     }
 
+    private func observeShortcutPreference() {
+        hotKeyCancellable = appState.$settings
+            .map { settings in
+                HotKeyPreference(keyCode: settings.shortcutKeyCode, modifiers: settings.shortcutModifiers)
+            }
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.configureGlobalHotKey()
+            }
+    }
+
     private func applyAppearance(_ preference: AppearancePreference) {
         NSApp.appearance = preference.nsAppearance
     }
+}
+
+private struct HotKeyPreference: Equatable {
+    let keyCode: UInt32
+    let modifiers: UInt32
 }
 
 private extension AppearancePreference {

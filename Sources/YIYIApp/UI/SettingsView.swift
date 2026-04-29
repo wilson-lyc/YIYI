@@ -1,3 +1,5 @@
+import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 struct SettingsView: View {
@@ -13,6 +15,7 @@ struct SettingsView: View {
     @State private var isContentScrolled = false
     @State private var contentViewportHeight: CGFloat = 0
     @State private var modelConnectionTestState: ModelConnectionTestState = .idle
+    @State private var isRecordingShortcut = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -131,9 +134,7 @@ struct SettingsView: View {
                 Divider()
 
                 settingsRow("快捷键配置", contentAlignment: .trailing) {
-                    TextField("⌥D", text: $appState.settings.shortcutDisplay)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 230)
+                    shortcutSettingControl
                 }
 
                 Divider()
@@ -151,6 +152,40 @@ struct SettingsView: View {
 
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var shortcutSettingControl: some View {
+        HStack(spacing: 8) {
+            Text(isRecordingShortcut ? "请按下快捷键" : appState.settings.shortcutDisplay)
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundStyle(isRecordingShortcut ? SettingsPalette.accent : .primary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 9)
+                .frame(height: 28)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7)
+                        .stroke(isRecordingShortcut ? SettingsPalette.accent : SettingsPalette.border)
+                )
+
+            Button(isRecordingShortcut ? "捕捉中" : "设置") {
+                isRecordingShortcut = true
+            }
+            .frame(width: 64)
+            .disabled(isRecordingShortcut)
+        }
+        .frame(width: 230)
+        .background {
+            ShortcutRecorder(
+                isRecording: $isRecordingShortcut,
+                onRecord: { shortcut in
+                    appState.settings.shortcutDisplay = shortcut.display
+                    appState.settings.shortcutKeyCode = shortcut.keyCode
+                    appState.settings.shortcutModifiers = shortcut.modifiers
+                }
+            )
+        }
     }
 
     private var modelsPage: some View {
@@ -776,6 +811,185 @@ private struct SettingsScrollOffsetPreferenceKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+private struct ShortcutRecorder: NSViewRepresentable {
+    @Binding var isRecording: Bool
+    let onRecord: (AppShortcut) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.setRecording(isRecording)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.setRecording(false)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    @MainActor
+    final class Coordinator {
+        var parent: ShortcutRecorder
+        private var monitor: Any?
+
+        init(parent: ShortcutRecorder) {
+            self.parent = parent
+        }
+
+        func setRecording(_ isRecording: Bool) {
+            if isRecording, monitor == nil {
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                    self?.handle(event)
+                    return nil
+                }
+            } else if !isRecording, let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        private func handle(_ event: NSEvent) {
+            if event.keyCode == UInt16(kVK_Escape) {
+                parent.isRecording = false
+                return
+            }
+
+            guard let shortcut = ShortcutFormatter.shortcut(from: event) else {
+                NSSound.beep()
+                return
+            }
+
+            parent.onRecord(shortcut)
+            parent.isRecording = false
+        }
+    }
+}
+
+private enum ShortcutFormatter {
+    static func shortcut(from event: NSEvent) -> AppShortcut? {
+        let modifiers = carbonModifiers(from: event.modifierFlags)
+        guard modifiers != 0, let key = keyDisplay(for: event) else {
+            return nil
+        }
+
+        return AppShortcut(
+            keyCode: UInt32(event.keyCode),
+            modifiers: modifiers,
+            display: display(modifiers: modifiers, key: key)
+        )
+    }
+
+    private static func display(modifiers: UInt32, key: String) -> String {
+        var parts: [String] = []
+        if modifiers & UInt32(controlKey) != 0 {
+            parts.append("⌃")
+        }
+        if modifiers & UInt32(optionKey) != 0 {
+            parts.append("⌥")
+        }
+        if modifiers & UInt32(shiftKey) != 0 {
+            parts.append("⇧")
+        }
+        if modifiers & UInt32(cmdKey) != 0 {
+            parts.append("⌘")
+        }
+        parts.append(key)
+        return parts.joined()
+    }
+
+    private static func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var modifiers: UInt32 = 0
+        if flags.contains(.control) {
+            modifiers |= UInt32(controlKey)
+        }
+        if flags.contains(.option) {
+            modifiers |= UInt32(optionKey)
+        }
+        if flags.contains(.shift) {
+            modifiers |= UInt32(shiftKey)
+        }
+        if flags.contains(.command) {
+            modifiers |= UInt32(cmdKey)
+        }
+        return modifiers
+    }
+
+    private static func keyDisplay(for event: NSEvent) -> String? {
+        if let specialKey = specialKeyDisplay(for: event.keyCode) {
+            return specialKey
+        }
+
+        guard let character = event.charactersIgnoringModifiers?.first else {
+            return nil
+        }
+
+        let key = String(character).uppercased()
+        return key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : key
+    }
+
+    private static func specialKeyDisplay(for keyCode: UInt16) -> String? {
+        switch Int(keyCode) {
+        case kVK_Return:
+            return "↩"
+        case kVK_Tab:
+            return "⇥"
+        case kVK_Space:
+            return "Space"
+        case kVK_Delete:
+            return "⌫"
+        case kVK_ForwardDelete:
+            return "⌦"
+        case kVK_Home:
+            return "Home"
+        case kVK_End:
+            return "End"
+        case kVK_PageUp:
+            return "Page Up"
+        case kVK_PageDown:
+            return "Page Down"
+        case kVK_LeftArrow:
+            return "←"
+        case kVK_RightArrow:
+            return "→"
+        case kVK_DownArrow:
+            return "↓"
+        case kVK_UpArrow:
+            return "↑"
+        case kVK_F1:
+            return "F1"
+        case kVK_F2:
+            return "F2"
+        case kVK_F3:
+            return "F3"
+        case kVK_F4:
+            return "F4"
+        case kVK_F5:
+            return "F5"
+        case kVK_F6:
+            return "F6"
+        case kVK_F7:
+            return "F7"
+        case kVK_F8:
+            return "F8"
+        case kVK_F9:
+            return "F9"
+        case kVK_F10:
+            return "F10"
+        case kVK_F11:
+            return "F11"
+        case kVK_F12:
+            return "F12"
+        default:
+            return nil
+        }
     }
 }
 
