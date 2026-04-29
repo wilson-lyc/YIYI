@@ -8,73 +8,6 @@ struct AppShortcut: Codable, Equatable {
     var display: String
 }
 
-struct ModelVersion: Identifiable, Codable, Equatable {
-    var id = UUID()
-    var name: String
-    var baseURL: String
-    var apiKey: String
-    var modelName: String
-    var extraBodyJSON: String
-
-    init(
-        id: UUID = UUID(),
-        name: String,
-        baseURL: String,
-        apiKey: String,
-        modelName: String,
-        extraBodyJSON: String = ""
-    ) {
-        self.id = id
-        self.name = name
-        self.baseURL = baseURL
-        self.apiKey = apiKey
-        self.modelName = modelName
-        self.extraBodyJSON = extraBodyJSON
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "默认模型"
-        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? ""
-        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
-        modelName = try container.decodeIfPresent(String.self, forKey: .modelName) ?? ""
-        extraBodyJSON = try container.decodeIfPresent(String.self, forKey: .extraBodyJSON) ?? ""
-    }
-}
-
-struct PromptVersion: Identifiable, Decodable, Equatable {
-    var id = UUID()
-    var name: String
-    var systemPrompt: String
-    var prompt: String
-
-    init(id: UUID = UUID(), name: String, systemPrompt: String, prompt: String) {
-        self.id = id
-        self.name = name
-        self.systemPrompt = systemPrompt
-        self.prompt = prompt
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "默认提示词"
-        systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? Self.defaultSystemPrompt
-        prompt = try container.decodeIfPresent(String.self, forKey: .prompt)
-            ?? container.decodeIfPresent(String.self, forKey: .content)
-            ?? Self.defaultPrompt
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case systemPrompt
-        case prompt
-        case content
-    }
-}
-
 struct AppSettings: Decodable, Equatable {
     static let defaultRequestTimeoutSeconds = 45
     static let requestTimeoutRange = 5...300
@@ -186,54 +119,6 @@ struct AppSettings: Decodable, Equatable {
         AppSettingsStore.save(normalized())
     }
 
-    var activeModelVersion: ModelVersion {
-        normalized().modelVersions.first { $0.id == activeModelVersionID } ?? .defaultOpenAI
-    }
-
-    var activePromptVersion: PromptVersion {
-        normalized().promptVersions.first { $0.id == activePromptVersionID } ?? .defaultTranslation
-    }
-
-    var requestTimeoutInterval: TimeInterval {
-        TimeInterval(Self.clampedRequestTimeoutSeconds(requestTimeoutSeconds))
-    }
-
-    func renderedPrompt(for selectedText: String) -> String {
-        let template = activePromptVersion.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let prompt = renderTemplate(template, selectedText: selectedText)
-        guard !prompt.contains("{{selectedText}}") else {
-            return prompt
-        }
-
-        if template.contains("{{selectedText}}") {
-            return prompt
-        }
-
-        return "\(prompt)\n\n\(selectedText)"
-    }
-
-    func renderedSystemPrompt() -> String {
-        let template = activePromptVersion.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let prompt = renderTemplate(template, selectedText: "")
-        let languageInstruction = """
-        Source language setting: \(sourceLanguage)
-        Target language: \(targetLanguage)
-        """
-
-        guard !prompt.isEmpty else {
-            return languageInstruction
-        }
-
-        return "\(prompt)\n\(languageInstruction)"
-    }
-
-    private func renderTemplate(_ template: String, selectedText: String) -> String {
-        template
-            .replacingOccurrences(of: "{{selectedText}}", with: selectedText)
-            .replacingOccurrences(of: "{{sourceLanguage}}", with: sourceLanguage)
-            .replacingOccurrences(of: "{{targetLanguage}}", with: targetLanguage)
-    }
-
     private func normalized() -> AppSettings {
         var settings = self
         if settings.modelVersions.isEmpty {
@@ -266,7 +151,7 @@ struct AppSettings: Decodable, Equatable {
         return settings
     }
 
-    private static func clampedRequestTimeoutSeconds(_ seconds: Int) -> Int {
+    static func clampedRequestTimeoutSeconds(_ seconds: Int) -> Int {
         min(max(seconds, requestTimeoutRange.lowerBound), requestTimeoutRange.upperBound)
     }
 
@@ -316,38 +201,6 @@ enum AppearancePreference: String, CaseIterable, Codable, Equatable, Identifiabl
             return "夜间"
         }
     }
-}
-
-extension ModelVersion {
-    static let defaultOpenAI = ModelVersion(
-        id: UUID(uuidString: "D7F24194-8D7A-432B-9B59-5691491D1B5D")!,
-        name: "默认模型",
-        baseURL: "https://api.openai.com/v1",
-        apiKey: "",
-        modelName: "gpt-4o-mini"
-    )
-}
-
-extension PromptVersion {
-    static let defaultSystemPrompt = """
-    You are a professional translation engine. Translate the selected text into {{targetLanguage}}.
-    Return only the translated text. Preserve the original meaning, formatting, line breaks, technical terms, numbers, and URLs.
-    Do not add explanations, quotes, markdown fences, or extra commentary.
-    """
-
-    static let defaultPrompt = """
-    Source language setting: {{sourceLanguage}}
-    Target language: {{targetLanguage}}
-
-    {{selectedText}}
-    """
-
-    static let defaultTranslation = PromptVersion(
-        id: UUID(uuidString: "8C6B9B59-0B38-47B9-9A55-8240E1F5B6D4")!,
-        name: "默认提示词",
-        systemPrompt: defaultSystemPrompt,
-        prompt: defaultPrompt
-    )
 }
 
 private enum AppSettingsStore {

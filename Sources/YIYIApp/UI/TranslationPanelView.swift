@@ -58,10 +58,17 @@ struct TranslationPanelView: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
-            languagePicker(selection: $appState.settings.targetLanguage, options: SupportedLanguages.target)
+            languagePicker(selection: targetLanguageSelection, options: SupportedLanguages.target)
                 .frame(width: 128)
         }
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var targetLanguageSelection: Binding<String> {
+        Binding(
+            get: { appState.settings.targetLanguage },
+            set: { appState.updateTargetLanguage($0) }
+        )
     }
 
     private var translationBody: some View {
