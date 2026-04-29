@@ -1,9 +1,8 @@
 import Foundation
 
-struct DeepSeekTranslationClient {
+struct OpenAITranslationClient {
     private let settings: AppSettings
     private let session: URLSession
-    private static let requestTimeout: TimeInterval = 45
 
     init(settings: AppSettings, session: URLSession = .shared) {
         self.settings = settings
@@ -19,7 +18,7 @@ struct DeepSeekTranslationClient {
 
         var request = URLRequest(url: try chatCompletionsURL(for: model))
         request.httpMethod = "POST"
-        request.timeoutInterval = Self.requestTimeout
+        request.timeoutInterval = settings.requestTimeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try requestBodyData(
@@ -41,7 +40,7 @@ struct DeepSeekTranslationClient {
         }
 
         let completion = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
-        guard let translation = completion.choices.first?.message.content.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let translation = completion.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines),
               !translation.isEmpty
         else {
             throw TranslationError.emptyResult
@@ -58,7 +57,7 @@ struct DeepSeekTranslationClient {
 
         var request = URLRequest(url: try chatCompletionsURL(for: model))
         request.httpMethod = "POST"
-        request.timeoutInterval = Self.requestTimeout
+        request.timeoutInterval = settings.requestTimeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try requestBodyData(
@@ -114,8 +113,13 @@ struct DeepSeekTranslationClient {
     }
 
     private func requestBodyData(for model: ModelVersion, messages: [ChatMessage], temperature: Double) throws -> Data {
+        let modelName = model.modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !modelName.isEmpty else {
+            throw TranslationError.missingModelName
+        }
+
         let request = ChatCompletionRequest(
-            model: model.modelName.trimmingCharacters(in: .whitespacesAndNewlines),
+            model: modelName,
             messages: messages,
             stream: false,
             temperature: temperature
@@ -126,8 +130,33 @@ struct DeepSeekTranslationClient {
             throw TranslationError.invalidResponse
         }
 
+        mergeProviderDefaults(for: model, into: &body)
         try mergeExtraBodyJSON(from: model, into: &body)
         return try JSONSerialization.data(withJSONObject: body)
+    }
+
+    private func mergeProviderDefaults(for model: ModelVersion, into body: inout [String: Any]) {
+        guard usesProviderManagedReasoningAPI(model) else {
+            return
+        }
+
+        body["thinking"] = ["type": "disabled"]
+    }
+
+    private func usesProviderManagedReasoningAPI(_ model: ModelVersion) -> Bool {
+        let modelName = model.modelName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard modelName == "deepseek-v4-flash" || modelName == "deepseek-v4-pro" else {
+            return false
+        }
+
+        guard
+            let components = URLComponents(string: model.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+            let host = components.host?.lowercased()
+        else {
+            return false
+        }
+
+        return host == "api.deepseek.com" || host.hasSuffix(".api.deepseek.com")
     }
 
     private func mergeExtraBodyJSON(from model: ModelVersion, into body: inout [String: Any]) throws {
@@ -160,6 +189,7 @@ struct DeepSeekTranslationClient {
 
 enum TranslationError: LocalizedError {
     case missingAPIKey
+    case missingModelName
     case invalidBaseURL
     case invalidResponse
     case invalidExtraBodyJSON
@@ -167,10 +197,20 @@ enum TranslationError: LocalizedError {
     case network(URLError)
     case apiError(statusCode: Int, message: String?)
 
+    var isTimeout: Bool {
+        if case let .network(error) = self, error.code == .timedOut {
+            return true
+        }
+
+        return false
+    }
+
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
             return "翻译失败，请先配置 API Key。"
+        case .missingModelName:
+            return "翻译失败，请先配置模型名称。"
         case .invalidBaseURL:
             return "翻译失败，服务地址无效。"
         case .invalidResponse:
@@ -219,7 +259,12 @@ private struct ChatCompletionRequest: Encodable {
 
 private struct ChatMessage: Codable {
     let role: String
-    let content: String
+    let content: String?
+
+    init(role: String, content: String) {
+        self.role = role
+        self.content = content
+    }
 }
 
 private struct ChatCompletionResponse: Decodable {

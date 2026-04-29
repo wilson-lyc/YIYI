@@ -1,6 +1,6 @@
 # 易译
 
-易译（YIYI）是一个 macOS 原生划词翻译工具原型，使用 DeepSeek 的 OpenAI 兼容接口完成翻译。
+易译（YIYI）是一个 macOS 原生划词翻译工具原型，使用 OpenAI 兼容接口完成翻译。
 
 ## 当前能力
 
@@ -8,7 +8,7 @@
 - 翻译浮窗：原文、译文、加载态、错误提示
 - 全局快捷键 `⌥D` 触发选中文本提取
 - Accessibility 选中文本读取，必要时使用复制动作兜底
-- DeepSeek 翻译，默认模型 `deepseek-v4-flash`
+- OpenAI 兼容接口翻译，默认模型 `gpt-4o-mini`
 
 ## 运行
 

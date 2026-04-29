@@ -26,8 +26,27 @@ struct TranslationPanelView: View {
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
+        .overlay(alignment: .bottom) {
+            if let toast = appState.toast {
+                toastView(toast.message)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 36)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .onChange(of: appState.status) { _, status in
             handleRefreshStatusChange(status)
+        }
+        .onChange(of: appState.toast) { _, toast in
+            guard let toast else {
+                return
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    appState.dismissToast(id: toast.id)
+                }
+            }
         }
     }
 
@@ -128,6 +147,19 @@ struct TranslationPanelView: View {
         RoundedRectangle(cornerRadius: 5, style: .continuous)
             .fill(.secondary.opacity(0.18))
             .frame(width: width, height: 10)
+    }
+
+    private func toastView(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.white)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
     }
 
     private func copyTranslation() {

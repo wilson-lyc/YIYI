@@ -135,6 +135,18 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 230)
                 }
+
+                Divider()
+
+                settingsRow("请求超时", contentAlignment: .trailing) {
+                    Stepper(
+                        "\(appState.settings.requestTimeoutSeconds) 秒",
+                        value: $appState.settings.requestTimeoutSeconds,
+                        in: AppSettings.requestTimeoutRange,
+                        step: 5
+                    )
+                    .frame(width: 230, alignment: .trailing)
+                }
             }
 
         }
@@ -284,7 +296,7 @@ struct SettingsView: View {
 
         Task {
             do {
-                try await DeepSeekTranslationClient(settings: appState.settings).testConnection(with: model)
+                try await OpenAITranslationClient(settings: appState.settings).testConnection(with: model)
                 await MainActor.run {
                     if selectedModelID == model.id, currentModel(matches: model) {
                         modelConnectionTestState = .success

@@ -68,11 +68,15 @@ struct PromptVersion: Identifiable, Decodable, Equatable {
 }
 
 struct AppSettings: Decodable, Equatable {
+    static let defaultRequestTimeoutSeconds = 45
+    static let requestTimeoutRange = 5...300
+
     var sourceLanguage = "自动识别"
     var targetLanguage = "简体中文"
     var shortcutDisplay = "⌥D"
     var appearancePreference = AppearancePreference.system
     var launchAtLogin = false
+    var requestTimeoutSeconds = Self.defaultRequestTimeoutSeconds
     var modelVersions = [ModelVersion.defaultOpenAI]
     var activeModelVersionID = ModelVersion.defaultOpenAI.id
     var promptVersions = [PromptVersion.defaultTranslation]
@@ -84,6 +88,7 @@ struct AppSettings: Decodable, Equatable {
         shortcutDisplay: String = "⌥D",
         appearancePreference: AppearancePreference = .system,
         launchAtLogin: Bool = false,
+        requestTimeoutSeconds: Int = AppSettings.defaultRequestTimeoutSeconds,
         modelVersions: [ModelVersion] = [ModelVersion.defaultOpenAI],
         activeModelVersionID: UUID = ModelVersion.defaultOpenAI.id,
         promptVersions: [PromptVersion] = [PromptVersion.defaultTranslation],
@@ -94,6 +99,7 @@ struct AppSettings: Decodable, Equatable {
         self.shortcutDisplay = shortcutDisplay
         self.appearancePreference = appearancePreference
         self.launchAtLogin = launchAtLogin
+        self.requestTimeoutSeconds = requestTimeoutSeconds
         self.modelVersions = modelVersions
         self.activeModelVersionID = activeModelVersionID
         self.promptVersions = promptVersions
@@ -107,6 +113,7 @@ struct AppSettings: Decodable, Equatable {
         shortcutDisplay = try container.decodeIfPresent(String.self, forKey: .shortcutDisplay) ?? "⌥D"
         appearancePreference = try container.decodeIfPresent(AppearancePreference.self, forKey: .appearancePreference) ?? .system
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+        requestTimeoutSeconds = try container.decodeIfPresent(Int.self, forKey: .requestTimeoutSeconds) ?? Self.defaultRequestTimeoutSeconds
         modelVersions = try container.decodeIfPresent([ModelVersion].self, forKey: .modelVersions) ?? []
         activeModelVersionID = try container.decodeIfPresent(UUID.self, forKey: .activeModelVersionID) ?? ModelVersion.defaultOpenAI.id
         promptVersions = try container.decodeIfPresent([PromptVersion].self, forKey: .promptVersions) ?? [.defaultTranslation]
@@ -171,9 +178,13 @@ struct AppSettings: Decodable, Equatable {
         normalized().promptVersions.first { $0.id == activePromptVersionID } ?? .defaultTranslation
     }
 
+    var requestTimeoutInterval: TimeInterval {
+        TimeInterval(Self.clampedRequestTimeoutSeconds(requestTimeoutSeconds))
+    }
+
     func renderedPrompt(for selectedText: String) -> String {
         let template = activePromptVersion.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let prompt = template.replacingOccurrences(of: "{{selectedText}}", with: selectedText)
+        let prompt = renderTemplate(template, selectedText: selectedText)
         guard !prompt.contains("{{selectedText}}") else {
             return prompt
         }
@@ -186,7 +197,25 @@ struct AppSettings: Decodable, Equatable {
     }
 
     func renderedSystemPrompt() -> String {
-        activePromptVersion.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let template = activePromptVersion.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = renderTemplate(template, selectedText: "")
+        let languageInstruction = """
+        Source language setting: \(sourceLanguage)
+        Target language: \(targetLanguage)
+        """
+
+        guard !prompt.isEmpty else {
+            return languageInstruction
+        }
+
+        return "\(prompt)\n\(languageInstruction)"
+    }
+
+    private func renderTemplate(_ template: String, selectedText: String) -> String {
+        template
+            .replacingOccurrences(of: "{{selectedText}}", with: selectedText)
+            .replacingOccurrences(of: "{{sourceLanguage}}", with: sourceLanguage)
+            .replacingOccurrences(of: "{{targetLanguage}}", with: targetLanguage)
     }
 
     private func normalized() -> AppSettings {
@@ -207,7 +236,13 @@ struct AppSettings: Decodable, Equatable {
             settings.activePromptVersionID = settings.promptVersions[0].id
         }
 
+        settings.requestTimeoutSeconds = Self.clampedRequestTimeoutSeconds(settings.requestTimeoutSeconds)
+
         return settings
+    }
+
+    private static func clampedRequestTimeoutSeconds(_ seconds: Int) -> Int {
+        min(max(seconds, requestTimeoutRange.lowerBound), requestTimeoutRange.upperBound)
     }
 
     private static let userDefaultsKey = "YIYI.AppSettings"
@@ -229,6 +264,7 @@ struct AppSettings: Decodable, Equatable {
         case shortcutDisplay
         case appearancePreference
         case launchAtLogin
+        case requestTimeoutSeconds
         case modelVersions
         case activeModelVersionID
         case promptVersions
@@ -267,11 +303,14 @@ extension ModelVersion {
 
 extension PromptVersion {
     static let defaultSystemPrompt = """
-    You are a professional translation engine. Return only the translated text.
+    You are a professional translation engine. Translate the selected text into {{targetLanguage}}.
+    Return only the translated text. Preserve the original meaning, formatting, line breaks, technical terms, numbers, and URLs.
+    Do not add explanations, quotes, markdown fences, or extra commentary.
     """
 
     static let defaultPrompt = """
-    Translate the following selected text into Simplified Chinese. Preserve the original meaning, formatting, line breaks, technical terms, numbers, and URLs.
+    Source language setting: {{sourceLanguage}}
+    Target language: {{targetLanguage}}
 
     {{selectedText}}
     """
@@ -314,6 +353,7 @@ private enum AppSettingsStore {
             shortcutDisplay: document.string(nil, "shortcut") ?? "⌥D",
             appearancePreference: AppearancePreference(rawValue: document.string(nil, "appearance") ?? "") ?? .system,
             launchAtLogin: document.bool(nil, "launch_at_login") ?? false,
+            requestTimeoutSeconds: document.int(nil, "request_timeout_seconds") ?? AppSettings.defaultRequestTimeoutSeconds,
             modelVersions: models.isEmpty ? [.defaultOpenAI] : models,
             activeModelVersionID: activeModelID,
             promptVersions: prompts.isEmpty ? [.defaultTranslation] : prompts,
@@ -447,6 +487,7 @@ private enum AppSettingsStore {
             "appearance = \(tomlString(settings.appearancePreference.rawValue))",
             "shortcut = \(tomlString(settings.shortcutDisplay))",
             "launch_at_login = \(settings.launchAtLogin ? "true" : "false")",
+            "request_timeout_seconds = \(settings.requestTimeoutSeconds)",
             "",
             "[translation]",
             "source_language = \(tomlString(settings.sourceLanguage))",
@@ -534,6 +575,14 @@ private struct SimpleTOMLDocument {
         default:
             return nil
         }
+    }
+
+    func int(_ section: String?, _ key: String) -> Int? {
+        guard let value = string(section, key) else {
+            return nil
+        }
+
+        return Int(value)
     }
 
     func sections(prefix: String) -> [String] {

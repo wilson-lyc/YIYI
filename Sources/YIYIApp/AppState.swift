@@ -5,6 +5,7 @@ final class AppState: ObservableObject {
     @Published var originalText: String
     @Published var translatedText: String
     @Published var status: TranslationStatus
+    @Published var toast: ToastMessage?
     @Published var settings: AppSettings {
         didSet {
             guard persistsSettings else {
@@ -62,8 +63,15 @@ final class AppState: ObservableObject {
             progressTask.cancel()
         }
 
-        translatedText = try await DeepSeekTranslationClient(settings: settings).translate(text)
-        status = .translated
+        do {
+            translatedText = try await OpenAITranslationClient(settings: settings).translate(text)
+            status = .translated
+        } catch {
+            if let translationError = error as? TranslationError, translationError.isTimeout {
+                showToast(error.localizedDescription)
+            }
+            throw error
+        }
     }
 
     func refreshTranslation() {
@@ -98,6 +106,18 @@ final class AppState: ObservableObject {
             }
             status = .loading("还在翻译，请稍候……")
         }
+    }
+
+    func dismissToast(id: UUID) {
+        guard toast?.id == id else {
+            return
+        }
+
+        toast = nil
+    }
+
+    private func showToast(_ message: String) {
+        toast = ToastMessage(message: message)
     }
 
     func addPromptVersion() -> UUID {
@@ -183,6 +203,11 @@ enum TranslationStatus: Equatable {
     }
 }
 
+struct ToastMessage: Equatable, Identifiable {
+    let id = UUID()
+    let message: String
+}
+
 #if DEBUG
 extension AppState {
     static var settingsPreview: AppState {
@@ -232,8 +257,8 @@ extension AppSettings {
             apiKey: "sk-preview-key",
             modelName: "gpt-4o-mini"
         )
-        let deepSeekModel = ModelVersion(
-            name: "DeepSeek",
+        let compatibleModel = ModelVersion(
+            name: "兼容模型",
             baseURL: "https://api.deepseek.com/v1",
             apiKey: "sk-preview-key",
             modelName: "deepseek-chat"
@@ -246,7 +271,7 @@ extension AppSettings {
             launchAtLogin: true,
             modelVersions: [
                 defaultModel,
-                deepSeekModel
+                compatibleModel
             ],
             activeModelVersionID: defaultModel.id,
             promptVersions: [
