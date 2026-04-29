@@ -17,22 +17,26 @@ final class AppState: ObservableObject {
     }
 
     private let persistsSettings: Bool
+    private let translationController: TranslationController
 
     init(
         originalText: String = "Select text anywhere on macOS, press Option + D, and YIYI will translate it in place without breaking your reading flow.",
         translatedText: String = "在 macOS 任意位置选中文本，按下 Option + D，易译会在不打断阅读流程的情况下就地完成翻译。",
         status: TranslationStatus = .ready,
         settings: AppSettings = AppSettings.load(),
-        persistsSettings: Bool = true
+        persistsSettings: Bool = true,
+        translationController: TranslationController = TranslationController()
     ) {
         self.originalText = originalText
         self.translatedText = translatedText
         self.status = status
         self.settings = settings
         self.persistsSettings = persistsSettings
+        self.translationController = translationController
     }
 
     func beginTranslation() {
+        translationController.cancelActiveTranslation()
         status = .loading("准备翻译……")
         translatedText = ""
     }
@@ -44,48 +48,24 @@ final class AppState: ObservableObject {
             originalText = try await SelectedTextReader.readSelectedText()
             settings.sourceLanguage = "自动识别"
             settings.targetLanguage = TranslationLanguageDetector.defaultTargetLanguage(for: originalText)
-            try await translateCurrentText()
+            try await translationController.translateCurrentText(in: self)
         } catch {
             translatedText = ""
             status = .error(error.localizedDescription)
         }
     }
 
-    func translateCurrentText() async throws {
-        let text = originalText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            throw SelectedTextReader.ReadError.emptySelection
-        }
-
-        status = .loading("翻译中……")
-        let progressTask = showTranslationProgressMessages()
-        defer {
-            progressTask.cancel()
-        }
-
-        do {
-            translatedText = try await OpenAITranslationClient(settings: settings).translate(text)
-            status = .translated
-        } catch {
-            if let translationError = error as? TranslationError, translationError.isTimeout {
-                showToast(error.localizedDescription)
-            }
-            throw error
-        }
+    func refreshTranslation() {
+        translationController.startTranslation(in: self, statusMessage: "重新翻译中……")
     }
 
-    func refreshTranslation() {
-        status = .loading("重新翻译中……")
-        translatedText = ""
-
-        Task { @MainActor in
-            do {
-                try await translateCurrentText()
-            } catch {
-                translatedText = ""
-                status = .error(error.localizedDescription)
-            }
+    func updateTargetLanguage(_ language: String) {
+        guard settings.targetLanguage != language else {
+            return
         }
+
+        settings.targetLanguage = language
+        translationController.startTranslation(in: self, statusMessage: "正在切换语言……")
     }
 
     func showEmptySelectionHint() {
@@ -100,22 +80,6 @@ final class AppState: ObservableObject {
         settings = updatedSettings
     }
 
-    private func showTranslationProgressMessages() -> Task<Void, Never> {
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled, status.isLoading else {
-                return
-            }
-            status = .loading("正在等待结果……")
-
-            try? await Task.sleep(for: .seconds(13))
-            guard !Task.isCancelled, status.isLoading else {
-                return
-            }
-            status = .loading("还在翻译，请稍候……")
-        }
-    }
-
     func dismissToast(id: UUID) {
         guard toast?.id == id else {
             return
@@ -124,96 +88,9 @@ final class AppState: ObservableObject {
         toast = nil
     }
 
-    private func showToast(_ message: String) {
+    func showToast(_ message: String) {
         toast = ToastMessage(message: message)
     }
-
-    func addPromptVersion() -> UUID {
-        let nextIndex = settings.promptVersions.count + 1
-        let version = PromptVersion(
-            name: "提示词 \(nextIndex)",
-            systemPrompt: PromptVersion.defaultSystemPrompt,
-            prompt: """
-            Translate the selected text into \(settings.targetLanguage).
-            Return only the result.
-
-            {{selectedText}}
-            """
-        )
-        settings.promptVersions.append(version)
-        settings.activePromptVersionID = version.id
-        return version.id
-    }
-
-    func deletePromptVersion(id: UUID) {
-        guard settings.promptVersions.count > 1 else {
-            return
-        }
-
-        settings.promptVersions.removeAll { $0.id == id }
-        if !settings.promptVersions.contains(where: { $0.id == settings.activePromptVersionID }) {
-            settings.activePromptVersionID = settings.promptVersions[0].id
-        }
-    }
-
-    func activatePromptVersion(id: UUID) {
-        guard settings.promptVersions.contains(where: { $0.id == id }) else {
-            return
-        }
-
-        settings.activePromptVersionID = id
-    }
-
-    func addModelVersion() -> UUID {
-        let version = ModelVersion(
-            name: "新模型",
-            baseURL: "",
-            apiKey: "",
-            modelName: "",
-            extraBodyJSON: ""
-        )
-        settings.modelVersions.append(version)
-        return version.id
-    }
-
-    func deleteModelVersion(id: UUID) {
-        guard settings.modelVersions.count > 1 else {
-            return
-        }
-
-        settings.modelVersions.removeAll { $0.id == id }
-        if !settings.modelVersions.contains(where: { $0.id == settings.activeModelVersionID }) {
-            settings.activeModelVersionID = settings.modelVersions[0].id
-        }
-    }
-
-    func activateModelVersion(id: UUID) {
-        guard settings.modelVersions.contains(where: { $0.id == id }) else {
-            return
-        }
-
-        settings.activeModelVersionID = id
-    }
-}
-
-enum TranslationStatus: Equatable {
-    case ready
-    case loading(String)
-    case translated
-    case error(String)
-
-    var isLoading: Bool {
-        if case .loading = self {
-            return true
-        }
-
-        return false
-    }
-}
-
-struct ToastMessage: Equatable, Identifiable {
-    let id = UUID()
-    let message: String
 }
 
 #if DEBUG

@@ -299,7 +299,10 @@ struct SettingsView: View {
 
         Task {
             do {
-                try await OpenAITranslationClient(settings: appState.settings).testConnection(with: model)
+                try await OpenAITranslationClient().testConnection(
+                    with: model,
+                    timeoutInterval: appState.settings.requestTimeoutInterval
+                )
                 await MainActor.run {
                     if selectedModelID == model.id, currentModel(matches: model) {
                         modelConnectionTestState = .success

@@ -1,16 +1,13 @@
 import Foundation
 
 struct OpenAITranslationClient {
-    private let settings: AppSettings
     private let session: URLSession
 
-    init(settings: AppSettings, session: URLSession = .shared) {
-        self.settings = settings
+    init(session: URLSession = .shared) {
         self.session = session
     }
 
-    func translate(_ text: String) async throws -> String {
-        let model = settings.activeModelVersion
+    func translate(model: ModelVersion, prompt: TranslationPrompt, timeoutInterval: TimeInterval) async throws -> String {
         let apiKey = model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else {
             throw TranslationError.missingAPIKey
@@ -18,14 +15,14 @@ struct OpenAITranslationClient {
 
         var request = URLRequest(url: try chatCompletionsURL(for: model))
         request.httpMethod = "POST"
-        request.timeoutInterval = settings.requestTimeoutInterval
+        request.timeoutInterval = timeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try requestBodyData(
             for: model,
             messages: [
-                .init(role: "system", content: settings.renderedSystemPrompt()),
-                .init(role: "user", content: settings.renderedPrompt(for: text))
+                .init(role: "system", content: prompt.system),
+                .init(role: "user", content: prompt.user)
             ],
             temperature: 0.2
         )
@@ -49,7 +46,7 @@ struct OpenAITranslationClient {
         return translation
     }
 
-    func testConnection(with model: ModelVersion) async throws {
+    func testConnection(with model: ModelVersion, timeoutInterval: TimeInterval) async throws {
         let apiKey = model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else {
             throw TranslationError.missingAPIKey
@@ -57,7 +54,7 @@ struct OpenAITranslationClient {
 
         var request = URLRequest(url: try chatCompletionsURL(for: model))
         request.httpMethod = "POST"
-        request.timeoutInterval = settings.requestTimeoutInterval
+        request.timeoutInterval = timeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try requestBodyData(
