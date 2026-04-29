@@ -1,19 +1,40 @@
-# 易译
+# 易译 YIYI
 
-易译（YIYI）是一个 macOS 原生划词翻译工具原型，使用 OpenAI 兼容接口完成翻译。
+易译是一个 macOS 原生划词翻译工具。它常驻菜单栏，通过全局快捷键读取当前选中文本，并使用 OpenAI 兼容接口完成翻译。
 
-## 当前能力
+## 下载
 
-- 状态栏常驻入口
-- 翻译浮窗：原文、译文、加载态、错误提示
-- 全局快捷键 `⌥D` 触发选中文本提取
-- Accessibility 选中文本读取，必要时使用复制动作兜底
-- OpenAI 兼容接口翻译，默认模型 `gpt-4o-mini`
+请前往 [GitHub Releases](https://github.com/wilson-lyc/YIYI/releases/latest) 下载最新版本的 `YIYI-*.dmg`。
 
-## 运行
+安装方式：
+
+1. 下载并打开 `YIYI-*.dmg`
+2. 将 `YIYI.app` 拖入 `Applications`
+3. 首次启动时，如果 macOS 提示来自未知开发者，请在 `系统设置 -> 隐私与安全性` 中允许打开
+4. 按提示授予辅助功能权限，用于读取选中文本
+
+当前发布包使用 ad-hoc 签名，未经过 Apple notarization。这是不使用 Apple Developer 账号时的常见打包方式。
+
+## 功能
+
+- 菜单栏常驻入口
+- 翻译浮窗展示原文、译文、加载状态和错误提示
+- 全局快捷键 `Option + D` 触发划词翻译
+- 通过 Accessibility 读取选中文本，必要时使用复制动作兜底
+- 支持 OpenAI 兼容接口，默认模型为 `gpt-4o-mini`
+
+## 本地开发
+
+需要 macOS 14 或更高版本，以及 Xcode/Swift 工具链。
 
 ```bash
 swift run YIYI
 ```
 
-运行后可在其他应用中选中文字后按 `⌥D` 提取并翻译文本。
+本地打包：
+
+```bash
+Scripts/package_app.sh
+```
+
+打包产物会生成在 `dist/` 目录。
