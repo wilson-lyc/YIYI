@@ -7,13 +7,16 @@ enum SelectedTextReader {
     enum ReadError: LocalizedError {
         case accessibilityPermissionMissing
         case emptySelection
+        case selectionReadTimedOut
 
         var errorDescription: String? {
             switch self {
             case .accessibilityPermissionMissing:
-                return "易译需要辅助功能权限才能读取其他应用中的选中文本。请在系统设置中为易译开启 Accessibility。"
+                return "YIYI 需要辅助功能权限才能读取其他应用中的选中文本。请在系统设置中为 YIYI 开启 Accessibility。"
             case .emptySelection:
                 return "未检测到选中文本。请先在任意应用中选中文本，再按快捷键。"
+            case .selectionReadTimedOut:
+                return "读取选中文本超时。请确认已为 YIYI 开启辅助功能权限，然后重试。"
             }
         }
     }
@@ -25,7 +28,28 @@ enum SelectedTextReader {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
-    static func readSelectedText() async throws -> String {
+    static func readSelectedText(timeout: Duration = .seconds(3)) async throws -> String {
+        let readTask = Task.detached(priority: .userInitiated) {
+            try await readSelectedTextWithoutTimeout()
+        }
+
+        let timeoutTask = Task<String, Error> {
+            try await Task.sleep(for: timeout)
+            throw ReadError.selectionReadTimedOut
+        }
+
+        do {
+            let text = try await race(readTask, against: timeoutTask)
+            timeoutTask.cancel()
+            return text
+        } catch {
+            readTask.cancel()
+            timeoutTask.cancel()
+            throw error
+        }
+    }
+
+    private static func readSelectedTextWithoutTimeout() async throws -> String {
         requestAccessibilityPermissionIfNeeded()
 
         guard AXIsProcessTrusted() else {
@@ -41,6 +65,31 @@ enum SelectedTextReader {
         }
 
         throw ReadError.emptySelection
+    }
+
+    private static func race(
+        _ readTask: Task<String, Error>,
+        against timeoutTask: Task<String, Error>
+    ) async throws -> String {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            let raceState = SelectionReadRaceState()
+
+            Task {
+                do {
+                    raceState.resume(continuation, with: .success(try await readTask.value))
+                } catch {
+                    raceState.resume(continuation, with: .failure(error))
+                }
+            }
+
+            Task {
+                do {
+                    raceState.resume(continuation, with: .success(try await timeoutTask.value))
+                } catch {
+                    raceState.resume(continuation, with: .failure(error))
+                }
+            }
+        }
     }
 
     private static func readViaAccessibility() -> String? {
@@ -112,5 +161,22 @@ enum SelectedTextReader {
         }
 
         return normalized
+    }
+}
+
+private final class SelectionReadRaceState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didResume = false
+
+    func resume(_ continuation: CheckedContinuation<String, Error>, with result: Result<String, Error>) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !didResume else {
+            return
+        }
+
+        didResume = true
+        continuation.resume(with: result)
     }
 }

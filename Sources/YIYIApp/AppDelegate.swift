@@ -65,9 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureStatusBar() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "易译")
+        item.button?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "YIYI")
         item.button?.imagePosition = .imageLeading
-        item.button?.title = " 易译"
+        item.button?.title = " YIYI"
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ""))
@@ -201,7 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "易译设置"
+            window.title = "YIYI 设置"
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.isOpaque = false
@@ -223,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             let alert = NSAlert()
             alert.messageText = "快捷键 \(shortcut.display) 已被占用"
-            alert.informativeText = "易译无法注册当前划词翻译快捷键。请在设置中换绑一个未被其他应用或系统占用的快捷键。"
+            alert.informativeText = "YIYI 无法注册当前划词翻译快捷键。请在设置中换绑一个未被其他应用或系统占用的快捷键。"
             alert.alertStyle = .warning
             alert.addButton(withTitle: "去换绑")
             alert.runModal()

@@ -21,7 +21,7 @@ final class AppState: ObservableObject {
 
     init(
         originalText: String = "Select text anywhere on macOS, press Option + D, and YIYI will translate it in place without breaking your reading flow.",
-        translatedText: String = "在 macOS 任意位置选中文本，按下 Option + D，易译会在不打断阅读流程的情况下就地完成翻译。",
+        translatedText: String = "在 macOS 任意位置选中文本，按下 Option + D，YIYI 会在不打断阅读流程的情况下就地完成翻译。",
         status: TranslationStatus = .ready,
         settings: AppSettings = AppSettings.load(),
         persistsSettings: Bool = true,
