@@ -13,6 +13,8 @@ jobs:
   release:
     name: Build and publish DMG
     runs-on: macos-15
+    env:
+      APP_VERSION: 0.1.${{ github.run_number }}
 
     steps:
       - name: Checkout
@@ -23,7 +25,7 @@ jobs:
 
       - name: Build app and DMG
         env:
-          APP_VERSION: 0.1.${{ github.run_number }}
+          APP_VERSION: ${{ env.APP_VERSION }}
           BUILD_NUMBER: ${{ github.run_number }}
           BUNDLE_ID: com.local.yiyi
           CODE_SIGN_IDENTITY: "-"
@@ -31,25 +33,15 @@ jobs:
           chmod +x Scripts/package_app.sh
           Scripts/package_app.sh
 
-      - name: Move latest tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f latest
-          git push --force origin latest
-
-      - name: Publish latest release
+      - name: Publish release
         uses: ncipollo/release-action@v1
         with:
-          tag: latest
-          name: YIYI Latest
+          tag: v${{ env.APP_VERSION }}
+          name: YIYI v${{ env.APP_VERSION }}
           body: |
             Automatically built from `${{ github.sha }}` on `main`.
 
             This build uses ad-hoc macOS signing (`codesign --sign -`) and is not notarized because no Apple Developer account is configured.
-          artifacts: dist/YIYI-0.1.${{ github.run_number }}.dmg
-          allowUpdates: true
-          replacesArtifacts: true
-          removeArtifacts: true
+          artifacts: dist/YIYI-${{ env.APP_VERSION }}.dmg
           makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}
