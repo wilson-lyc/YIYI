@@ -1,13 +1,13 @@
 import Foundation
 
-struct OpenAITranslationClient {
+struct OpenAITranslationClient: Sendable {
     private let session: URLSession
 
     init(session: URLSession = .shared) {
         self.session = session
     }
 
-    func translate(model: ModelVersion, prompt: TranslationPrompt, timeoutInterval: TimeInterval) async throws -> String {
+    func translate(model: ModelVersion, prompt: TranslationPrompt, timeoutInterval: TimeInterval) async throws -> TranslationResult {
         let apiKey = model.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else {
             throw TranslationError.missingAPIKey
@@ -43,7 +43,7 @@ struct OpenAITranslationClient {
             throw TranslationError.emptyResult
         }
 
-        return translation
+        return TranslationResult(text: translation, totalTokens: completion.usage?.totalTokens)
     }
 
     func testConnection(with model: ModelVersion, timeoutInterval: TimeInterval) async throws {
@@ -266,9 +266,18 @@ private struct ChatMessage: Codable {
 
 private struct ChatCompletionResponse: Decodable {
     let choices: [Choice]
+    let usage: Usage?
 
     struct Choice: Decodable {
         let message: ChatMessage
+    }
+
+    struct Usage: Decodable {
+        let totalTokens: Int
+
+        enum CodingKeys: String, CodingKey {
+            case totalTokens = "total_tokens"
+        }
     }
 }
 

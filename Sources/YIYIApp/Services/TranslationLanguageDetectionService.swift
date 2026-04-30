@@ -1,6 +1,6 @@
 import NaturalLanguage
 
-enum TranslationLanguageDetector {
+enum TranslationLanguageDetectionService {
     static func defaultTargetLanguage(for text: String) -> String {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(text)
