@@ -1,252 +1,10 @@
 import AppKit
 import Carbon.HIToolbox
-import Combine
-import Foundation
 import SwiftUI
 
-final class GlobalHotKeyRegistrar {
-    private var hotKeyRef: EventHotKeyRef?
-    private var eventHandlerRef: EventHandlerRef?
-
-    private(set) var keyCode: UInt32
-    private(set) var modifiers: UInt32
-    private(set) var display: String
-    private let action: () -> Void
-
-    init(
-        keyCode: UInt32 = UInt32(kVK_ANSI_D),
-        modifiers: UInt32 = UInt32(optionKey),
-        display: String = "⌥D",
-        action: @escaping () -> Void
-    ) {
-        self.keyCode = keyCode
-        self.modifiers = modifiers
-        self.display = display
-        self.action = action
-    }
-
-    convenience init(shortcut: AppShortcut, action: @escaping () -> Void) {
-        self.init(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, display: shortcut.display, action: action)
-    }
-
-    deinit {
-        unregister()
-    }
-
-    @discardableResult
-    func register() -> Bool {
-        unregister()
-
-        guard registerHotKey() else {
-            return false
-        }
-
-        guard installPressedEventHandler() else {
-            unregister()
-            return false
-        }
-
-        return true
-    }
-
-    func unregister() {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
-        }
-
-        if let eventHandlerRef {
-            RemoveEventHandler(eventHandlerRef)
-            self.eventHandlerRef = nil
-        }
-    }
-
-    private func registerHotKey() -> Bool {
-        let status = RegisterEventHotKey(
-            keyCode,
-            modifiers,
-            CarbonHotKey.registrationID,
-            GetApplicationEventTarget(),
-            0,
-            &hotKeyRef
-        )
-
-        guard status == noErr else {
-            NSLog("YIYI failed to register global hot key: keyCode=\(keyCode), modifiers=\(modifiers), status=\(status)")
-            hotKeyRef = nil
-            return false
-        }
-
-        return true
-    }
-
-    private func installPressedEventHandler() -> Bool {
-        var eventType = CarbonHotKey.pressedEventType
-        let status = InstallEventHandler(
-            GetApplicationEventTarget(),
-            Self.handlePressedEvent,
-            1,
-            &eventType,
-            Unmanaged.passUnretained(self).toOpaque(),
-            &eventHandlerRef
-        )
-
-        guard status == noErr else {
-            NSLog("YIYI failed to install global hot key handler: status=\(status)")
-            return false
-        }
-
-        return true
-    }
-
-    private static let handlePressedEvent: EventHandlerUPP = { _, _, userData in
-        guard let userData else {
-            return noErr
-        }
-
-        let registrar = Unmanaged<GlobalHotKeyRegistrar>
-            .fromOpaque(userData)
-            .takeUnretainedValue()
-        registrar.action()
-        return noErr
-    }
-}
-
-@MainActor
-final class GlobalHotKeyController {
-    private let appState: AppState
-    private let onTrigger: () -> Void
-    private let onConflict: (AppShortcut) -> Void
-
-    private var registrar: GlobalHotKeyRegistrar?
-    private var settingsCancellable: AnyCancellable?
-
-    init(
-        appState: AppState,
-        onTrigger: @escaping () -> Void,
-        onConflict: @escaping (AppShortcut) -> Void
-    ) {
-        self.appState = appState
-        self.onTrigger = onTrigger
-        self.onConflict = onConflict
-    }
-
-    func start() {
-        bindShortcutPreference()
-        register(currentShortcut)
-    }
-
-    static func canRegister(_ shortcut: AppShortcut) -> Bool {
-        var hotKeyRef: EventHotKeyRef?
-        let status = RegisterEventHotKey(
-            shortcut.keyCode,
-            shortcut.modifiers,
-            CarbonHotKey.availabilityProbeID,
-            GetApplicationEventTarget(),
-            0,
-            &hotKeyRef
-        )
-
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
-        }
-
-        return status == noErr
-    }
-
-    private var currentShortcut: AppShortcut {
-        appState.settings.globalHotKeyShortcut
-    }
-
-    private func bindShortcutPreference() {
-        settingsCancellable = appState.$settings
-            .map(\.globalHotKeyShortcut)
-            .map(RegisteredShortcut.init)
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] registeredShortcut in
-                self?.register(registeredShortcut.shortcut)
-            }
-    }
-
-    private func register(_ shortcut: AppShortcut) {
-        if registrar?.matches(shortcut) == true {
-            return
-        }
-
-        let previousRegistrar = registrar
-        let nextRegistrar = GlobalHotKeyRegistrar(shortcut: shortcut) { [weak self] in
-            DispatchQueue.main.async {
-                self?.onTrigger()
-            }
-        }
-
-        previousRegistrar?.unregister()
-        guard nextRegistrar.register() else {
-            restore(previousRegistrar, failedShortcut: shortcut)
-            return
-        }
-
-        registrar = nextRegistrar
-    }
-
-    private func restore(_ previousRegistrar: GlobalHotKeyRegistrar?, failedShortcut: AppShortcut) {
-        // Keep the last working shortcut active when the user's new shortcut is unavailable.
-        guard let previousRegistrar else {
-            onConflict(failedShortcut)
-            return
-        }
-
-        _ = previousRegistrar.register()
-        registrar = previousRegistrar
-        appState.updateShortcut(previousRegistrar.shortcut)
-    }
-}
-
-private enum CarbonHotKey {
-    static let registrationID = EventHotKeyID(signature: OSType(0x59495949), id: 1)
-    static let availabilityProbeID = EventHotKeyID(signature: OSType(0x59495954), id: 1)
-
-    static var pressedEventType: EventTypeSpec {
-        EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
-    }
-}
-
-/// Compares the actual registered keys only; display text changes should not force re-registration.
-private struct RegisteredShortcut: Equatable {
-    let shortcut: AppShortcut
-
-    static func == (lhs: RegisteredShortcut, rhs: RegisteredShortcut) -> Bool {
-        lhs.shortcut.keyCode == rhs.shortcut.keyCode
-            && lhs.shortcut.modifiers == rhs.shortcut.modifiers
-    }
-}
-
-private extension GlobalHotKeyRegistrar {
-    var shortcut: AppShortcut {
-        AppShortcut(keyCode: keyCode, modifiers: modifiers, display: display)
-    }
-
-    func matches(_ shortcut: AppShortcut) -> Bool {
-        keyCode == shortcut.keyCode && modifiers == shortcut.modifiers
-    }
-}
-
-private extension AppSettings {
-    var globalHotKeyShortcut: AppShortcut {
-        AppShortcut(
-            keyCode: shortcutKeyCode,
-            modifiers: shortcutModifiers,
-            display: shortcutDisplay
-        )
-    }
-}
-
 struct GlobalHotKeySettingControl: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var viewModel: SettingsViewModel
+    private let shortcutAvailability: ShortcutAvailabilityChecking = ShortcutAvailabilityService()
 
     @State private var isRecording = false
     @State private var conflictMessage: String?
@@ -254,7 +12,7 @@ struct GlobalHotKeySettingControl: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             HStack(spacing: 8) {
-                Text(isRecording ? "请按下快捷键" : appState.settings.shortcutDisplay)
+                Text(isRecording ? "请按下快捷键" : viewModel.settings.shortcutDisplay)
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundStyle(isRecording ? Color(nsColor: .controlAccentColor) : .primary)
                     .lineLimit(1)
@@ -304,7 +62,7 @@ struct GlobalHotKeySettingControl: View {
     }
 
     private var currentShortcut: AppShortcut {
-        appState.settings.globalHotKeyShortcut
+        viewModel.settings.globalHotKeyShortcut
     }
 
     private func handleRecordedShortcut(_ shortcut: AppShortcut) -> Bool {
@@ -313,14 +71,14 @@ struct GlobalHotKeySettingControl: View {
             return true
         }
 
-        guard GlobalHotKeyController.canRegister(shortcut) else {
+        guard shortcutAvailability.canRegister(shortcut) else {
             conflictMessage = "\(shortcut.display) 已被占用，请换一个快捷键。"
             NSSound.beep()
             return false
         }
 
         conflictMessage = nil
-        appState.updateShortcut(shortcut)
+        viewModel.updateShortcut(shortcut)
         return true
     }
 }
@@ -357,7 +115,7 @@ private struct ShortcutRecorder: NSViewRepresentable {
 
         func setRecording(_ isRecording: Bool) {
             if isRecording, monitor == nil {
-                // The local monitor captures one keyDown and returns nil so it does not leak into the UI.
+                // Captures one keyDown and returns nil so the shortcut does not leak into the UI.
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                     self?.handle(event)
                     return nil

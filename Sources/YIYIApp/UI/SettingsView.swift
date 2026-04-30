@@ -2,18 +2,14 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var viewModel: SettingsViewModel
 
-    @State private var selectedPage: SettingsPage = .general
-    @State private var selectedModelID: UUID?
-    @State private var selectedPromptID: UUID?
     @State private var hoveredModelID: UUID?
     @State private var hoveredPromptID: UUID?
     @State private var isModelAddHovered = false
     @State private var isPromptAddHovered = false
     @State private var isContentScrolled = false
     @State private var contentViewportHeight: CGFloat = 0
-    @State private var modelConnectionTestState: ModelConnectionTestState = .idle
 
     var body: some View {
         HStack(spacing: 0) {
@@ -30,10 +26,9 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
-            selectedModelID = selectedModelID ?? appState.settings.activeModelVersionID
-            selectedPromptID = selectedPromptID ?? appState.settings.activePromptVersionID
+            viewModel.prepareSelectionsIfNeeded()
         }
-        .onChange(of: selectedPage) {
+        .onChange(of: viewModel.selectedPage) {
             isContentScrolled = false
         }
         .ignoresSafeArea()
@@ -57,7 +52,7 @@ struct SettingsView: View {
 
     private func sidebarButton(_ page: SettingsPage) -> some View {
         Button {
-            selectedPage = page
+            viewModel.selectedPage = page
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: page.symbolName)
@@ -68,7 +63,7 @@ struct SettingsView: View {
                 Spacer()
             }
             .contentShape(Rectangle())
-            .foregroundStyle(selectedPage == page ? .white : .secondary)
+            .foregroundStyle(viewModel.selectedPage == page ? .white : .secondary)
             .padding(.horizontal, 8)
             .frame(height: 28)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -81,7 +76,7 @@ struct SettingsView: View {
     }
 
     private func sidebarButtonBackground(for page: SettingsPage) -> Color {
-        if selectedPage == page {
+        if viewModel.selectedPage == page {
             return SettingsPalette.accent
         }
 
@@ -90,17 +85,17 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch selectedPage {
+        switch viewModel.selectedPage {
         case .general:
-            rightContent(title: selectedPage.title) {
+            rightContent(title: viewModel.selectedPage.title) {
                 generalPage
             }
         case .models:
-            rightContent(title: selectedPage.title, scrolls: false) {
+            rightContent(title: viewModel.selectedPage.title, scrolls: false) {
                 modelsPage
             }
         case .prompts:
-            rightContent(title: selectedPage.title, scrolls: false) {
+            rightContent(title: viewModel.selectedPage.title, scrolls: false) {
                 promptsPage
             }
         }
@@ -110,7 +105,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             plainSettingsGroup {
                 settingsRow("主题", contentAlignment: .trailing) {
-                    Picker("", selection: $appState.settings.appearancePreference) {
+                    Picker("", selection: $viewModel.settings.appearancePreference) {
                         ForEach(AppearancePreference.allCases) { preference in
                             Text(preference.title)
                                 .tag(preference)
@@ -124,7 +119,7 @@ struct SettingsView: View {
                 Divider()
 
                 settingsRow("开机自启", contentAlignment: .trailing) {
-                    Toggle("", isOn: $appState.settings.launchAtLogin)
+                    Toggle("", isOn: $viewModel.settings.launchAtLogin)
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
@@ -139,8 +134,8 @@ struct SettingsView: View {
 
                 settingsRow("请求超时", contentAlignment: .trailing) {
                     Stepper(
-                        "\(appState.settings.requestTimeoutSeconds) 秒",
-                        value: $appState.settings.requestTimeoutSeconds,
+                        "\(viewModel.settings.requestTimeoutSeconds) 秒",
+                        value: $viewModel.settings.requestTimeoutSeconds,
                         in: AppSettings.requestTimeoutRange,
                         step: 5
                     )
@@ -153,22 +148,22 @@ struct SettingsView: View {
     }
 
     private var shortcutSettingControl: some View {
-        GlobalHotKeySettingControl(appState: appState)
+        GlobalHotKeySettingControl(viewModel: viewModel)
     }
 
     private var modelsPage: some View {
         HStack(alignment: .top, spacing: 18) {
             ScrollView {
                 versionList(
-                    items: appState.settings.modelVersions,
-                    activeID: appState.settings.activeModelVersionID,
-                    selectedID: selectedModelID,
+                    items: viewModel.settings.modelVersions,
+                    activeID: viewModel.settings.activeModelVersionID,
+                    selectedID: viewModel.selectedModelID,
                     hoveredID: $hoveredModelID,
                     isAddHovered: $isModelAddHovered,
                     addTitle: "新增模型",
                     title: \.name,
-                    onSelect: { selectedModelID = $0 },
-                    onAdd: { selectedModelID = appState.addModelVersion() }
+                    onSelect: { viewModel.selectedModelID = $0 },
+                    onAdd: { _ = viewModel.addModelVersion() }
                 )
             }
             .frame(width: 200)
@@ -225,30 +220,29 @@ struct SettingsView: View {
 
             modelActionRow(
                 model: model.wrappedValue,
-                isActive: appState.settings.activeModelVersionID == model.wrappedValue.id,
-                canDelete: appState.settings.modelVersions.count > 1,
-                canActivate: modelConnectionTestState == .success,
-                onActivate: { appState.activateModelVersion(id: model.wrappedValue.id) },
+                isActive: viewModel.settings.activeModelVersionID == model.wrappedValue.id,
+                canDelete: viewModel.settings.modelVersions.count > 1,
+                canActivate: viewModel.modelConnectionTestState == .success,
+                onActivate: { viewModel.activateModelVersion(id: model.wrappedValue.id) },
                 onDelete: {
-                    appState.deleteModelVersion(id: model.wrappedValue.id)
-                    selectedModelID = appState.settings.activeModelVersionID
+                    viewModel.deleteModelVersion(id: model.wrappedValue.id)
                 }
             )
         }
         .onChange(of: model.wrappedValue.id) {
-            modelConnectionTestState = .idle
+            viewModel.resetModelConnectionTestState()
         }
         .onChange(of: model.wrappedValue.baseURL) {
-            modelConnectionTestState = .idle
+            viewModel.resetModelConnectionTestState()
         }
         .onChange(of: model.wrappedValue.apiKey) {
-            modelConnectionTestState = .idle
+            viewModel.resetModelConnectionTestState()
         }
         .onChange(of: model.wrappedValue.modelName) {
-            modelConnectionTestState = .idle
+            viewModel.resetModelConnectionTestState()
         }
         .onChange(of: model.wrappedValue.extraBodyJSON) {
-            modelConnectionTestState = .idle
+            viewModel.resetModelConnectionTestState()
         }
     }
 
@@ -274,17 +268,17 @@ struct SettingsView: View {
             Spacer()
 
             Button {
-                guard modelConnectionTestState.canStartTest else {
+                guard viewModel.modelConnectionTestState.canStartTest else {
                     return
                 }
                 testModelConnection(with: model)
             } label: {
-                Text(modelConnectionTestState.buttonTitle)
-                    .foregroundStyle(modelConnectionTestState.buttonForegroundStyle)
+                Text(viewModel.modelConnectionTestState.buttonTitle)
+                    .foregroundStyle(modelConnectionTestForegroundStyle)
             }
-            .disabled(modelConnectionTestState.isTesting)
-            .allowsHitTesting(modelConnectionTestState.canStartTest)
-            .help(modelConnectionTestState.failureMessage ?? "")
+            .disabled(viewModel.modelConnectionTestState.isTesting)
+            .allowsHitTesting(viewModel.modelConnectionTestState.canStartTest)
+            .help(viewModel.modelConnectionTestState.failureMessage ?? "")
 
             Button(role: .destructive, action: onDelete) {
                 Text("删除")
@@ -295,46 +289,33 @@ struct SettingsView: View {
     }
 
     private func testModelConnection(with model: ModelVersion) {
-        modelConnectionTestState = .testing
-
         Task {
-            do {
-                try await OpenAITranslationClient().testConnection(
-                    with: model,
-                    timeoutInterval: appState.settings.requestTimeoutInterval
-                )
-                await MainActor.run {
-                    if selectedModelID == model.id, currentModel(matches: model) {
-                        modelConnectionTestState = .success
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    if selectedModelID == model.id, currentModel(matches: model) {
-                        modelConnectionTestState = .failure(error.localizedDescription)
-                    }
-                }
-            }
+            await viewModel.testModelConnection(with: model)
         }
     }
 
-    private func currentModel(matches model: ModelVersion) -> Bool {
-        appState.settings.modelVersions.first { $0.id == model.id } == model
+    private var modelConnectionTestForegroundStyle: Color {
+        switch viewModel.modelConnectionTestState {
+        case .success:
+            return .green
+        case .idle, .testing, .failure:
+            return .primary
+        }
     }
 
     private var promptsPage: some View {
         HStack(alignment: .top, spacing: 18) {
             ScrollView {
                 versionList(
-                    items: appState.settings.promptVersions,
-                    activeID: appState.settings.activePromptVersionID,
-                    selectedID: selectedPromptID,
+                    items: viewModel.settings.promptVersions,
+                    activeID: viewModel.settings.activePromptVersionID,
+                    selectedID: viewModel.selectedPromptID,
                     hoveredID: $hoveredPromptID,
                     isAddHovered: $isPromptAddHovered,
                     addTitle: "新增提示词",
                     title: \.name,
-                    onSelect: { selectedPromptID = $0 },
-                    onAdd: { selectedPromptID = appState.addPromptVersion() }
+                    onSelect: { viewModel.selectedPromptID = $0 },
+                    onAdd: { _ = viewModel.addPromptVersion() }
                 )
             }
             .frame(width: 200)
@@ -379,14 +360,13 @@ struct SettingsView: View {
             }
 
             actionRow(
-                isActive: appState.settings.activePromptVersionID == prompt.wrappedValue.id,
+                isActive: viewModel.settings.activePromptVersionID == prompt.wrappedValue.id,
                 activateTitle: "设为当前",
                 deleteTitle: "删除",
-                canDelete: appState.settings.promptVersions.count > 1,
-                onActivate: { appState.activatePromptVersion(id: prompt.wrappedValue.id) },
+                canDelete: viewModel.settings.promptVersions.count > 1,
+                onActivate: { viewModel.activatePromptVersion(id: prompt.wrappedValue.id) },
                 onDelete: {
-                    appState.deletePromptVersion(id: prompt.wrappedValue.id)
-                    selectedPromptID = appState.settings.activePromptVersionID
+                    viewModel.deletePromptVersion(id: prompt.wrappedValue.id)
                 }
             )
         }
@@ -658,122 +638,41 @@ struct SettingsView: View {
     }
 
     private var selectedModelBinding: Binding<ModelVersion>? {
-        let id = selectedModelID ?? appState.settings.activeModelVersionID
-        guard appState.settings.modelVersions.contains(where: { $0.id == id }) else {
+        let id = viewModel.selectedModelID ?? viewModel.settings.activeModelVersionID
+        guard viewModel.settings.modelVersions.contains(where: { $0.id == id }) else {
             return nil
         }
 
         return Binding(
             get: {
-                appState.settings.modelVersions.first { $0.id == id } ?? appState.settings.modelVersions[0]
+                viewModel.settings.modelVersions.first { $0.id == id } ?? viewModel.settings.modelVersions[0]
             },
             set: { updatedVersion in
-                guard let index = appState.settings.modelVersions.firstIndex(where: { $0.id == id }) else {
+                guard let index = viewModel.settings.modelVersions.firstIndex(where: { $0.id == id }) else {
                     return
                 }
-                appState.settings.modelVersions[index] = updatedVersion
+                viewModel.settings.modelVersions[index] = updatedVersion
             }
         )
     }
 
     private var selectedPromptBinding: Binding<PromptVersion>? {
-        let id = selectedPromptID ?? appState.settings.activePromptVersionID
-        guard appState.settings.promptVersions.contains(where: { $0.id == id }) else {
+        let id = viewModel.selectedPromptID ?? viewModel.settings.activePromptVersionID
+        guard viewModel.settings.promptVersions.contains(where: { $0.id == id }) else {
             return nil
         }
 
         return Binding(
             get: {
-                appState.settings.promptVersions.first { $0.id == id } ?? appState.settings.promptVersions[0]
+                viewModel.settings.promptVersions.first { $0.id == id } ?? viewModel.settings.promptVersions[0]
             },
             set: { updatedVersion in
-                guard let index = appState.settings.promptVersions.firstIndex(where: { $0.id == id }) else {
+                guard let index = viewModel.settings.promptVersions.firstIndex(where: { $0.id == id }) else {
                     return
                 }
-                appState.settings.promptVersions[index] = updatedVersion
+                viewModel.settings.promptVersions[index] = updatedVersion
             }
         )
-    }
-}
-
-private enum ModelConnectionTestState: Equatable {
-    case idle
-    case testing
-    case success
-    case failure(String)
-
-    var buttonTitle: String {
-        switch self {
-        case .idle:
-            return "测试连接"
-        case .testing:
-            return "测试中..."
-        case .success:
-            return "测试成功"
-        case .failure:
-            return "测试失败"
-        }
-    }
-
-    var isTesting: Bool {
-        self == .testing
-    }
-
-    var canStartTest: Bool {
-        switch self {
-        case .idle, .failure:
-            return true
-        case .testing, .success:
-            return false
-        }
-    }
-
-    var failureMessage: String? {
-        switch self {
-        case let .failure(message):
-            return message
-        case .idle, .testing, .success:
-            return nil
-        }
-    }
-
-    var buttonForegroundStyle: Color {
-        switch self {
-        case .success:
-            return .green
-        case .idle, .testing, .failure:
-            return .primary
-        }
-    }
-}
-
-private enum SettingsPage: CaseIterable, Identifiable {
-    case general
-    case models
-    case prompts
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .general:
-            return "常规"
-        case .models:
-            return "模型"
-        case .prompts:
-            return "提示词"
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .general:
-            return "gearshape"
-        case .models:
-            return "cpu"
-        case .prompts:
-            return "text.quote"
-        }
     }
 }
 
@@ -802,7 +701,7 @@ private enum SettingsPalette {
 
 #if DEBUG
 #Preview("设置窗口") {
-    SettingsView(appState: .settingsPreview)
+    SettingsView(viewModel: .settingsPreview)
         .frame(width: 900, height: 680)
 }
 #endif

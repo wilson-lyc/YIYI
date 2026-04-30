@@ -2,9 +2,14 @@ import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 import CoreGraphics
+import Foundation
 
-enum SelectedTextReader {
-    enum ReadError: LocalizedError {
+protocol SelectedTextProviding: Sendable {
+    func selectedText() async throws -> String
+}
+
+struct SelectedTextService: SelectedTextProviding {
+    enum ProviderError: LocalizedError {
         case accessibilityPermissionMissing
         case emptySelection
         case selectionReadTimedOut
@@ -21,62 +26,53 @@ enum SelectedTextReader {
         }
     }
 
-    static func requestAccessibilityPermissionIfNeeded() {
-        let options = [
-            "AXTrustedCheckOptionPrompt": true
-        ] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
+    func selectedText() async throws -> String {
+        return try await selectedText(timeout: .seconds(3))
     }
 
-    static func readSelectedText(timeout: Duration = .seconds(3)) async throws -> String {
-        let readTask = Task.detached(priority: .userInitiated) {
-            try await readSelectedTextWithoutTimeout()
+    private func selectedText(timeout: Duration) async throws -> String {
+        let providerTask = Task.detached(priority: .userInitiated) {
+            try await Self.provideSelectedText()
         }
 
         let timeoutTask = Task<String, Error> {
             try await Task.sleep(for: timeout)
-            throw ReadError.selectionReadTimedOut
+            throw ProviderError.selectionReadTimedOut
         }
 
         do {
-            let text = try await race(readTask, against: timeoutTask)
+            let text = try await race(providerTask, against: timeoutTask)
             timeoutTask.cancel()
             return text
         } catch {
-            readTask.cancel()
+            providerTask.cancel()
             timeoutTask.cancel()
             throw error
         }
     }
 
-    private static func readSelectedTextWithoutTimeout() async throws -> String {
-        requestAccessibilityPermissionIfNeeded()
-
-        guard AXIsProcessTrusted() else {
-            throw ReadError.accessibilityPermissionMissing
-        }
-
-        if let text = readViaAccessibility(), !text.isEmpty {
+    private static func provideSelectedText() async throws -> String {
+        if let text = selectedTextFromAccessibility(), !text.isEmpty {
             return text
         }
 
-        if let text = await readViaCopyShortcut(), !text.isEmpty {
+        if let text = await selectedTextFromCopyShortcut(), !text.isEmpty {
             return text
         }
 
-        throw ReadError.emptySelection
+        throw ProviderError.emptySelection
     }
 
-    private static func race(
-        _ readTask: Task<String, Error>,
+    private func race(
+        _ providerTask: Task<String, Error>,
         against timeoutTask: Task<String, Error>
     ) async throws -> String {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
-            let raceState = SelectionReadRaceState()
+            let raceState = SelectedTextServiceRaceState()
 
             Task {
                 do {
-                    raceState.resume(continuation, with: .success(try await readTask.value))
+                    raceState.resume(continuation, with: .success(try await providerTask.value))
                 } catch {
                     raceState.resume(continuation, with: .failure(error))
                 }
@@ -92,7 +88,7 @@ enum SelectedTextReader {
         }
     }
 
-    private static func readViaAccessibility() -> String? {
+    private static func selectedTextFromAccessibility() -> String? {
         let systemWideElement = AXUIElementCreateSystemWide()
         var focusedValue: CFTypeRef?
         let focusedResult = AXUIElementCopyAttributeValue(
@@ -121,7 +117,7 @@ enum SelectedTextReader {
     }
 
     @MainActor
-    private static func readViaCopyShortcut() async -> String? {
+    private static func selectedTextFromCopyShortcut() async -> String? {
         let pasteboard = NSPasteboard.general
         let previousItems = pasteboard.pasteboardItems ?? []
 
@@ -164,7 +160,7 @@ enum SelectedTextReader {
     }
 }
 
-private final class SelectionReadRaceState: @unchecked Sendable {
+private final class SelectedTextServiceRaceState: @unchecked Sendable {
     private let lock = NSLock()
     private var didResume = false
 

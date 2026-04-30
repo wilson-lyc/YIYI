@@ -1,6 +1,6 @@
 import Foundation
 
-enum TokenEstimator {
+enum TokenEstimationService {
     static func estimate(_ text: String) -> Int {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct TranslationPanelView: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var viewModel: TranslationPanelViewModel
     @State private var showsCopiedMessage = false
     @State private var isRefreshing = false
     @State private var refreshRotation = 0.0
@@ -11,10 +11,6 @@ struct TranslationPanelView: View {
     let onRefreshTranslation: () -> Void
 
     private let translationHeight: CGFloat = 140
-    private var tokenCount: Int {
-        TokenEstimator.estimate(appState.originalText) + TokenEstimator.estimate(appState.translatedText)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             headerBar
@@ -27,24 +23,24 @@ struct TranslationPanelView: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
         .overlay(alignment: .bottom) {
-            if let toast = appState.toast {
+            if let toast = viewModel.toast {
                 toastView(toast.message)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 36)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .onChange(of: appState.status) { _, status in
+        .onChange(of: viewModel.status) { _, status in
             handleRefreshStatusChange(status)
         }
-        .onChange(of: appState.toast) { _, toast in
+        .onChange(of: viewModel.toast) { _, toast in
             guard let toast else {
                 return
             }
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
                 withAnimation(.easeInOut(duration: 0.18)) {
-                    appState.dismissToast(id: toast.id)
+                    viewModel.dismissToast(id: toast.id)
                 }
             }
         }
@@ -52,7 +48,7 @@ struct TranslationPanelView: View {
 
     private var headerBar: some View {
         HStack(spacing: 8) {
-            languagePicker(selection: $appState.settings.sourceLanguage, options: SupportedLanguages.source)
+            languagePicker(selection: sourceLanguageSelection, options: SupportedLanguages.source)
                 .frame(width: 128)
             Image(systemName: "arrow.right")
                 .font(.system(size: 17, weight: .semibold))
@@ -66,19 +62,26 @@ struct TranslationPanelView: View {
 
     private var targetLanguageSelection: Binding<String> {
         Binding(
-            get: { appState.settings.targetLanguage },
-            set: { appState.updateTargetLanguage($0) }
+            get: { viewModel.settings.targetLanguage },
+            set: { viewModel.updateTargetLanguage($0) }
+        )
+    }
+
+    private var sourceLanguageSelection: Binding<String> {
+        Binding(
+            get: { viewModel.settings.sourceLanguage },
+            set: { viewModel.updateSourceLanguage($0) }
         )
     }
 
     private var translationBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if case let .error(message) = appState.status {
+                if case let .error(message) = viewModel.status {
                     Text(message)
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.orange)
-                } else if case let .loading(message) = appState.status {
+                } else if case let .loading(message) = viewModel.status {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(message)
                             .font(.system(size: 14, weight: .medium))
@@ -100,7 +103,7 @@ struct TranslationPanelView: View {
                         loadingPulse = false
                     }
                 } else {
-                    Text(appState.translatedText.isEmpty ? "译文会显示在这里" : appState.translatedText)
+                    Text(viewModel.translatedText.isEmpty ? "译文会显示在这里" : viewModel.translatedText)
                         .font(.system(size: 15))
                         .lineSpacing(2)
                         .foregroundStyle(.primary)
@@ -118,7 +121,7 @@ struct TranslationPanelView: View {
         HStack(spacing: 4) {
             IconActionButton(systemName: showsCopiedMessage ? "checkmark" : "doc.on.doc", action: copyTranslation)
             .help("复制")
-            .disabled(appState.translatedText.isEmpty || appState.status.isLoading)
+            .disabled(viewModel.translatedText.isEmpty || viewModel.status.isLoading)
 
             IconActionButton(
                 systemName: refreshIconName,
@@ -129,7 +132,7 @@ struct TranslationPanelView: View {
 
             Spacer(minLength: 0)
 
-            Text("\(tokenCount) tokens")
+            Text(viewModel.tokenCountText)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -170,8 +173,7 @@ struct TranslationPanelView: View {
     }
 
     private func copyTranslation() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(appState.translatedText, forType: .string)
+        viewModel.copyTranslation()
         withAnimation(.easeInOut(duration: 0.15)) {
             showsCopiedMessage = true
         }
@@ -242,7 +244,7 @@ private struct IconActionButton: View {
 #if DEBUG
 #Preview("翻译窗口 - 已翻译") {
     TranslationPanelView(
-        appState: .translatedPreview,
+        viewModel: .translatedPreview,
         onRefreshTranslation: {}
     )
     .padding()
@@ -251,7 +253,7 @@ private struct IconActionButton: View {
 
 #Preview("翻译窗口 - 加载中") {
     TranslationPanelView(
-        appState: .loadingPreview,
+        viewModel: .loadingPreview,
         onRefreshTranslation: {}
     )
     .padding()
@@ -260,7 +262,7 @@ private struct IconActionButton: View {
 
 #Preview("翻译窗口 - 错误") {
     TranslationPanelView(
-        appState: .errorPreview,
+        viewModel: .errorPreview,
         onRefreshTranslation: {}
     )
     .padding()

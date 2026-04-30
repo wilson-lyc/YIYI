@@ -75,7 +75,14 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 PLIST
 
 if command -v codesign >/dev/null 2>&1 && [[ "${SKIP_CODE_SIGN:-0}" != "1" ]]; then
-  codesign --force --deep --sign "$CODE_SIGN_IDENTITY" --timestamp=none "$APP_DIR" >/dev/null
+  code_sign_args=(--force --deep --sign "$CODE_SIGN_IDENTITY")
+  if [[ "$CODE_SIGN_IDENTITY" == "-" ]]; then
+    code_sign_args+=(--timestamp=none)
+  else
+    code_sign_args+=(--options runtime --timestamp)
+  fi
+
+  codesign "${code_sign_args[@]}" "$APP_DIR" >/dev/null
 fi
 
 echo "Packaged $APP_DIR"
