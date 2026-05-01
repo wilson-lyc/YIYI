@@ -95,12 +95,16 @@ struct SelectedTextService: SelectedTextProviding {
     private static func selectedTextFromCopyShortcut() async -> String? {
         let pasteboard = NSPasteboard.general
         let previousItems = pasteboard.pasteboardItems ?? []
+        let previousChangeCount = pasteboard.changeCount
 
         pasteboard.clearContents()
         sendCopyShortcut()
 
-        try? await Task.sleep(for: .milliseconds(140))
-        let copiedText = normalize(pasteboard.string(forType: .string))
+        let copiedText = await copiedTextFromPasteboard(
+            pasteboard,
+            previousChangeCount: previousChangeCount,
+            timeout: .milliseconds(900)
+        )
 
         pasteboard.clearContents()
         if !previousItems.isEmpty {
@@ -108,6 +112,26 @@ struct SelectedTextService: SelectedTextProviding {
         }
 
         return copiedText
+    }
+
+    @MainActor
+    private static func copiedTextFromPasteboard(
+        _ pasteboard: NSPasteboard,
+        previousChangeCount: Int,
+        timeout: Duration
+    ) async -> String? {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+
+        repeat {
+            if pasteboard.changeCount != previousChangeCount,
+               let copiedText = normalize(pasteboard.string(forType: .string)) {
+                return copiedText
+            }
+
+            try? await Task.sleep(for: .milliseconds(40))
+        } while ContinuousClock.now < deadline
+
+        return normalize(pasteboard.string(forType: .string))
     }
 
     private func race(
