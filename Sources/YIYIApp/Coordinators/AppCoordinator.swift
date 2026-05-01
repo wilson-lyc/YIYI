@@ -14,9 +14,11 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
     private var permissionWindow: NSWindow?
     private var didPositionFloatingPanel = false
     private var settingsCancellable: AnyCancellable?
+    private var floatingPanelSizeCancellable: AnyCancellable?
     private var hotKeyCoordinator: GlobalHotKeyCoordinator?
     private var selectedTextCaptureTask: Task<Void, Never>?
     private var selectedTextCaptureTaskID: UUID?
+    private var isApplyingFloatingPanelSize = false
 
     init(
         settingsState: AppSettingsState = AppSettingsState(),
@@ -221,10 +223,9 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
             }
 
             if shouldReuseVisiblePanel {
-                resizeFloatingPanelToFitContent()
+                applyFloatingPanelSize(settingsState.settings, animate: false)
             } else {
                 showFloatingPanel(activate: false)
-                resizeFloatingPanelToFitContent()
             }
 
             guard didCaptureSelectedText else {
@@ -240,7 +241,7 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
             floatingPanel = makeFloatingPanel()
         }
 
-        resizeFloatingPanelToFitContent()
+        applyFloatingPanelSize(settingsState.settings, animate: false)
         if !didPositionFloatingPanel {
             floatingPanel?.center()
             didPositionFloatingPanel = true
@@ -256,8 +257,13 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
 
     private func makeFloatingPanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 1),
-            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: settingsState.settings.translationPanelWidth,
+                height: settingsState.settings.translationPanelHeight
+            ),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -271,6 +277,18 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         panel.isMovableByWindowBackground = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.standardWindowButton(.closeButton)?.isEnabled = true
+        panel.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+        panel.standardWindowButton(.zoomButton)?.isEnabled = false
+        panel.contentMinSize = NSSize(
+            width: AppSettings.translationPanelWidthRange.lowerBound,
+            height: AppSettings.translationPanelHeightRange.lowerBound
+        )
+        panel.contentMaxSize = NSSize(
+            width: AppSettings.translationPanelWidthRange.upperBound,
+            height: AppSettings.translationPanelHeightRange.upperBound
+        )
         panel.delegate = self
 
         let visualEffectView = NSVisualEffectView()
@@ -296,8 +314,34 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         ])
 
         panel.contentView = visualEffectView
-        panel.setContentSize(hostingView.fittingSize)
+        applyFloatingPanelSize(settingsState.settings, to: panel, animate: false)
         return panel
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard
+            !isApplyingFloatingPanelSize,
+            let resizedPanel = notification.object as? NSPanel,
+            resizedPanel === floatingPanel
+        else {
+            return
+        }
+
+        let contentSize = resizedPanel.contentView?.bounds.size ?? resizedPanel.contentRect(forFrameRect: resizedPanel.frame).size
+        let width = AppSettings.clampedTranslationPanelWidth(Int(contentSize.width.rounded()))
+        let height = AppSettings.clampedTranslationPanelHeight(Int(contentSize.height.rounded()))
+
+        guard
+            settingsState.settings.translationPanelWidth != width ||
+                settingsState.settings.translationPanelHeight != height
+        else {
+            return
+        }
+
+        var settings = settingsState.settings
+        settings.translationPanelWidth = width
+        settings.translationPanelHeight = height
+        settingsState.settings = settings
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -311,15 +355,27 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         translationPanelViewModel.cancelCurrentWork()
     }
 
-    private func resizeFloatingPanelToFitContent() {
-        guard
-            let floatingPanel,
-            let hostingView = floatingPanel.contentView?.subviews.first
-        else {
+    private func applyFloatingPanelSize(_ settings: AppSettings, animate: Bool) {
+        guard let floatingPanel else {
             return
         }
 
-        floatingPanel.setContentSize(hostingView.fittingSize)
+        applyFloatingPanelSize(settings, to: floatingPanel, animate: animate)
+    }
+
+    private func applyFloatingPanelSize(_ settings: AppSettings, to panel: NSPanel, animate: Bool) {
+        let contentSize = NSSize(
+            width: AppSettings.clampedTranslationPanelWidth(settings.translationPanelWidth),
+            height: AppSettings.clampedTranslationPanelHeight(settings.translationPanelHeight)
+        )
+
+        guard panel.contentRect(forFrameRect: panel.frame).size != contentSize else {
+            return
+        }
+
+        isApplyingFloatingPanelSize = true
+        panel.setContentSize(contentSize)
+        isApplyingFloatingPanelSize = false
     }
 
     private func showSettingsWindow() {
@@ -366,6 +422,22 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
             .sink { [weak self] preference in
                 self?.applyAppearance(preference)
             }
+
+        floatingPanelSizeCancellable = settingsState.$settings
+            .map { settings in
+                FloatingPanelSize(width: settings.translationPanelWidth, height: settings.translationPanelHeight)
+            }
+            .removeDuplicates()
+            .sink { [weak self] size in
+                guard let self else {
+                    return
+                }
+
+                var settings = settingsState.settings
+                settings.translationPanelWidth = size.width
+                settings.translationPanelHeight = size.height
+                applyFloatingPanelSize(settings, animate: true)
+            }
     }
 
     private func applyAppearance(_ preference: AppearancePreference) {
@@ -384,4 +456,9 @@ private extension AppearancePreference {
             return NSAppearance(named: .darkAqua)
         }
     }
+}
+
+private struct FloatingPanelSize: Equatable {
+    let width: Int
+    let height: Int
 }

@@ -11,6 +11,10 @@ struct AppShortcut: Codable, Equatable, Sendable {
 struct AppSettings: Decodable, Equatable, Sendable {
     static let defaultRequestTimeoutSeconds = 45
     static let requestTimeoutRange = 5...300
+    static let defaultTranslationPanelWidth = 340
+    static let defaultTranslationPanelHeight = 220
+    static let translationPanelWidthRange = 310...720
+    static let translationPanelHeightRange = 180...640
 
     var sourceLanguage = "自动识别"
     var targetLanguage = "简体中文"
@@ -20,6 +24,8 @@ struct AppSettings: Decodable, Equatable, Sendable {
     var appearancePreference = AppearancePreference.system
     var launchAtLogin = false
     var requestTimeoutSeconds = Self.defaultRequestTimeoutSeconds
+    var translationPanelWidth = Self.defaultTranslationPanelWidth
+    var translationPanelHeight = Self.defaultTranslationPanelHeight
     var modelVersions = [ModelVersion.defaultOpenAI]
     var activeModelVersionID = ModelVersion.defaultOpenAI.id
     var promptVersions = [PromptVersion.defaultTranslation]
@@ -34,6 +40,8 @@ struct AppSettings: Decodable, Equatable, Sendable {
         appearancePreference: AppearancePreference = .system,
         launchAtLogin: Bool = false,
         requestTimeoutSeconds: Int = AppSettings.defaultRequestTimeoutSeconds,
+        translationPanelWidth: Int = AppSettings.defaultTranslationPanelWidth,
+        translationPanelHeight: Int = AppSettings.defaultTranslationPanelHeight,
         modelVersions: [ModelVersion] = [ModelVersion.defaultOpenAI],
         activeModelVersionID: UUID = ModelVersion.defaultOpenAI.id,
         promptVersions: [PromptVersion] = [PromptVersion.defaultTranslation],
@@ -47,6 +55,8 @@ struct AppSettings: Decodable, Equatable, Sendable {
         self.appearancePreference = appearancePreference
         self.launchAtLogin = launchAtLogin
         self.requestTimeoutSeconds = requestTimeoutSeconds
+        self.translationPanelWidth = translationPanelWidth
+        self.translationPanelHeight = translationPanelHeight
         self.modelVersions = modelVersions
         self.activeModelVersionID = activeModelVersionID
         self.promptVersions = promptVersions
@@ -63,6 +73,8 @@ struct AppSettings: Decodable, Equatable, Sendable {
         appearancePreference = try container.decodeIfPresent(AppearancePreference.self, forKey: .appearancePreference) ?? .system
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         requestTimeoutSeconds = try container.decodeIfPresent(Int.self, forKey: .requestTimeoutSeconds) ?? Self.defaultRequestTimeoutSeconds
+        translationPanelWidth = try container.decodeIfPresent(Int.self, forKey: .translationPanelWidth) ?? Self.defaultTranslationPanelWidth
+        translationPanelHeight = try container.decodeIfPresent(Int.self, forKey: .translationPanelHeight) ?? Self.defaultTranslationPanelHeight
         modelVersions = try container.decodeIfPresent([ModelVersion].self, forKey: .modelVersions) ?? []
         activeModelVersionID = try container.decodeIfPresent(UUID.self, forKey: .activeModelVersionID) ?? ModelVersion.defaultOpenAI.id
         promptVersions = try container.decodeIfPresent([PromptVersion].self, forKey: .promptVersions) ?? [.defaultTranslation]
@@ -99,6 +111,8 @@ struct AppSettings: Decodable, Equatable, Sendable {
         }
 
         settings.requestTimeoutSeconds = Self.clampedRequestTimeoutSeconds(settings.requestTimeoutSeconds)
+        settings.translationPanelWidth = Self.clampedTranslationPanelWidth(settings.translationPanelWidth)
+        settings.translationPanelHeight = Self.clampedTranslationPanelHeight(settings.translationPanelHeight)
         if settings.shortcutDisplay.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             settings.shortcutDisplay = AppShortcut.defaultTranslation.display
         }
@@ -116,6 +130,14 @@ struct AppSettings: Decodable, Equatable, Sendable {
         min(max(seconds, requestTimeoutRange.lowerBound), requestTimeoutRange.upperBound)
     }
 
+    static func clampedTranslationPanelWidth(_ width: Int) -> Int {
+        min(max(width, translationPanelWidthRange.lowerBound), translationPanelWidthRange.upperBound)
+    }
+
+    static func clampedTranslationPanelHeight(_ height: Int) -> Int {
+        min(max(height, translationPanelHeightRange.lowerBound), translationPanelHeightRange.upperBound)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case baseURL
         case apiKey
@@ -128,6 +150,8 @@ struct AppSettings: Decodable, Equatable, Sendable {
         case appearancePreference
         case launchAtLogin
         case requestTimeoutSeconds
+        case translationPanelWidth
+        case translationPanelHeight
         case modelVersions
         case activeModelVersionID
         case promptVersions

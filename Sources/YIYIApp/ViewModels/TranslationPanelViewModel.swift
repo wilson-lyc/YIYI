@@ -86,7 +86,7 @@ final class TranslationPanelViewModel: ObservableObject {
             originalText = ""
             translatedText = ""
             totalTokens = nil
-            status = .error("未选中需要翻译的文本")
+            status = .error(selectionCaptureErrorMessage(for: error))
             return false
         }
     }
@@ -148,6 +148,14 @@ final class TranslationPanelViewModel: ObservableObject {
 
     private func showToast(_ message: String) {
         toast = ToastMessage(message: message)
+    }
+
+    private func selectionCaptureErrorMessage(for error: Error) -> String {
+        if case SelectedTextService.ProviderError.selectionReadTimedOut = error {
+            return "文本读取失败"
+        }
+
+        return "未选中需要翻译的文本"
     }
 
     private func updateSettings(_ update: (inout AppSettings) -> Void) {

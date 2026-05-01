@@ -35,7 +35,7 @@ struct SelectedTextService: SelectedTextProviding {
             try await Self.provideSelectedText()
         }
 
-        let timeoutTask = Task<String, Error> {
+        let timeoutTask = Task<String, Error>.detached(priority: .userInitiated) {
             try await Task.sleep(for: timeout)
             throw ProviderError.selectionReadTimedOut
         }
@@ -61,31 +61,6 @@ struct SelectedTextService: SelectedTextProviding {
         }
 
         throw ProviderError.emptySelection
-    }
-
-    private func race(
-        _ providerTask: Task<String, Error>,
-        against timeoutTask: Task<String, Error>
-    ) async throws -> String {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
-            let raceState = SelectedTextServiceRaceState()
-
-            Task {
-                do {
-                    raceState.resume(continuation, with: .success(try await providerTask.value))
-                } catch {
-                    raceState.resume(continuation, with: .failure(error))
-                }
-            }
-
-            Task {
-                do {
-                    raceState.resume(continuation, with: .success(try await timeoutTask.value))
-                } catch {
-                    raceState.resume(continuation, with: .failure(error))
-                }
-            }
-        }
     }
 
     private static func selectedTextFromAccessibility() -> String? {
@@ -133,6 +108,31 @@ struct SelectedTextService: SelectedTextProviding {
         }
 
         return copiedText
+    }
+
+    private func race(
+        _ providerTask: Task<String, Error>,
+        against timeoutTask: Task<String, Error>
+    ) async throws -> String {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            let raceState = SelectedTextServiceRaceState()
+
+            Task.detached(priority: .userInitiated) {
+                do {
+                    raceState.resume(continuation, with: .success(try await providerTask.value))
+                } catch {
+                    raceState.resume(continuation, with: .failure(error))
+                }
+            }
+
+            Task.detached(priority: .userInitiated) {
+                do {
+                    raceState.resume(continuation, with: .success(try await timeoutTask.value))
+                } catch {
+                    raceState.resume(continuation, with: .failure(error))
+                }
+            }
+        }
     }
 
     private static func sendCopyShortcut() {
