@@ -203,10 +203,8 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         selectedTextCaptureTask?.cancel()
         let taskID = UUID()
         selectedTextCaptureTaskID = taskID
-        let shouldReuseVisiblePanel = floatingPanel?.isVisible == true
-        if !shouldReuseVisiblePanel {
-            floatingPanel?.orderOut(nil)
-        }
+        let shouldRestoreVisiblePanel = floatingPanel?.isVisible == true
+        floatingPanel?.orderOut(nil)
         translationPanelViewModel.beginSelectionCapture()
 
         selectedTextCaptureTask = Task { @MainActor in
@@ -222,11 +220,10 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
                 return
             }
 
-            if shouldReuseVisiblePanel {
+            if shouldRestoreVisiblePanel {
                 applyFloatingPanelSize(settingsState.settings, animate: false)
-            } else {
-                showFloatingPanel(activate: false)
             }
+            showFloatingPanel(activate: false)
 
             guard didCaptureSelectedText else {
                 return
