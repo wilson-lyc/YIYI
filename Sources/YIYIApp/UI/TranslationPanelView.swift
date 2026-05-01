@@ -9,7 +9,10 @@ struct TranslationPanelView: View {
 
     let onRefreshTranslation: () -> Void
 
-    private let translationHeight: CGFloat = 140
+    private let panelHorizontalPadding: CGFloat = 10
+    private let panelBottomPadding: CGFloat = 10
+    private let contentPadding: CGFloat = 5
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             headerBar
@@ -17,9 +20,16 @@ struct TranslationPanelView: View {
             actionBar
         }
         .font(.body)
-        .padding(12)
-        .frame(width: 340)
-        .fixedSize(horizontal: false, vertical: true)
+        .padding(.top, 0)
+        .padding(.horizontal, panelHorizontalPadding)
+        .padding(.bottom, panelBottomPadding)
+        .frame(
+            minWidth: CGFloat(AppSettings.translationPanelWidthRange.lowerBound),
+            maxWidth: .infinity,
+            minHeight: CGFloat(AppSettings.translationPanelHeightRange.lowerBound),
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
         .overlay(alignment: .bottom) {
             if let toast = viewModel.toast {
@@ -101,17 +111,17 @@ struct TranslationPanelView: View {
                     }
                 } else {
                     Text(viewModel.translatedText.isEmpty ? "译文会显示在这里" : viewModel.translatedText)
-                        .font(.body)
-                        .lineSpacing(2)
+                        .font(.title3)
+                        .lineSpacing(3)
                         .foregroundStyle(.primary)
                         .textSelection(.enabled)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(6)
+            .padding(contentPadding)
         }
-        .frame(height: translationHeight, alignment: .topLeading)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .layoutPriority(1)
     }
 
     private var actionBar: some View {
