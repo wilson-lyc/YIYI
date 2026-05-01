@@ -126,7 +126,7 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         guard permissionService.hasFullPermission else {
             showPermissionGuideWindow()
             permissionService.startMonitoring { [weak self] in
-                self?.refreshStatusMenu()
+                self?.startIfRequiredPermissionsAreGranted()
             }
             return
         }
@@ -157,14 +157,18 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
     private func showPermissionGuideWindow() {
         if permissionWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 500, height: 246),
+                contentRect: NSRect(x: 0, y: 0, width: 480, height: 230),
                 styleMask: [.titled, .fullSizeContentView],
                 backing: .buffered,
                 defer: false
             )
-            window.title = "YIYI 权限引导"
-            window.titlebarAppearsTransparent = true
-            window.titleVisibility = .hidden
+            window.title = "权限引导"
+            window.titleVisibility = .visible
+            window.titlebarAppearsTransparent = false
+            window.isMovableByWindowBackground = true
+            window.isOpaque = true
+            window.backgroundColor = .windowBackgroundColor
+            window.hasShadow = true
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(
                 rootView: PermissionsGuideView(
@@ -197,7 +201,10 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         selectedTextCaptureTask?.cancel()
         let taskID = UUID()
         selectedTextCaptureTaskID = taskID
-        floatingPanel?.orderOut(nil)
+        let shouldReuseVisiblePanel = floatingPanel?.isVisible == true
+        if !shouldReuseVisiblePanel {
+            floatingPanel?.orderOut(nil)
+        }
         translationPanelViewModel.beginSelectionCapture()
 
         selectedTextCaptureTask = Task { @MainActor in
@@ -213,8 +220,12 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
                 return
             }
 
-            showFloatingPanel(activate: false)
-            resizeFloatingPanelToFitContent()
+            if shouldReuseVisiblePanel {
+                resizeFloatingPanelToFitContent()
+            } else {
+                showFloatingPanel(activate: false)
+                resizeFloatingPanelToFitContent()
+            }
 
             guard didCaptureSelectedText else {
                 return
