@@ -7,23 +7,24 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
     private let settingsState: AppSettingsState
     private let translationPanelViewModel: TranslationPanelViewModel
     private let settingsViewModel: SettingsViewModel
+    private let permissionService: AppPermissionService
     private var statusItem: NSStatusItem?
     private var floatingPanel: NSPanel?
     private var settingsWindow: NSWindow?
+    private var permissionWindow: NSWindow?
     private var didPositionFloatingPanel = false
     private var settingsCancellable: AnyCancellable?
     private var hotKeyCoordinator: GlobalHotKeyCoordinator?
     private var selectedTextCaptureTask: Task<Void, Never>?
     private var selectedTextCaptureTaskID: UUID?
-    private var permissionCheckTimer: Timer?
-    private var didShowPermissionAlert = false
-    private var didShowPermissionGrantedRestartAlert = false
 
     init(
         settingsState: AppSettingsState = AppSettingsState(),
+        permissionService: AppPermissionService = AppPermissionService(),
         translationService: TranslationServicing = TranslationService()
     ) {
         self.settingsState = settingsState
+        self.permissionService = permissionService
         self.translationPanelViewModel = TranslationPanelViewModel(
             settingsState: settingsState,
             translationService: translationService
@@ -110,7 +111,7 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ""))
 
-        if !AppPermissionService.hasAccessibilityPermission {
+        if !AppPermissionService.hasFullPermission {
             menu.addItem(NSMenuItem(title: "授权辅助功能权限", action: #selector(openAccessibilitySettings), keyEquivalent: ""))
         }
 
@@ -121,89 +122,25 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
     }
 
     private func startIfRequiredPermissionsAreGranted() {
-        guard AppPermissionService.hasAccessibilityPermission else {
-            pauseForMissingPermissions()
+        permissionService.refresh()
+        guard permissionService.hasFullPermission else {
+            showPermissionGuideWindow()
+            permissionService.startMonitoring { [weak self] in
+                self?.refreshStatusMenu()
+            }
             return
         }
 
-        permissionCheckTimer?.invalidate()
-        permissionCheckTimer = nil
-        statusItem?.button?.title = ""
         refreshStatusMenu()
+        permissionService.stopMonitoring()
+        configureGlobalHotKeyController()
+    }
 
-        guard !didShowPermissionAlert else {
-            showPermissionGrantedRestartAlertIfNeeded()
-            return
-        }
-
+    private func configureGlobalHotKeyController() {
         guard hotKeyCoordinator == nil else {
             return
         }
 
-        configureGlobalHotKeyController()
-    }
-
-    private func pauseForMissingPermissions() {
-        statusItem?.button?.title = ""
-        refreshStatusMenu()
-        AppPermissionService.requestAccessibilityPermissionIfNeeded()
-        startPermissionPolling()
-        showMissingPermissionsAlertIfNeeded()
-    }
-
-    private func startPermissionPolling() {
-        guard permissionCheckTimer == nil else {
-            return
-        }
-
-        permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.startIfRequiredPermissionsAreGranted()
-            }
-        }
-    }
-
-    private func showMissingPermissionsAlertIfNeeded() {
-        guard !didShowPermissionAlert else {
-            return
-        }
-
-        didShowPermissionAlert = true
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.messageText = "YIYI 需要辅助功能权限"
-        alert.informativeText = "YIYI 需要辅助功能权限来获取你选中的文本，并监听划词翻译快捷键。请在系统设置中为 YIYI 开启 Accessibility，授权后即可使用划词翻译。"
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "打开系统设置")
-        alert.addButton(withTitle: "稍后")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            AppPermissionService.openAccessibilitySettings()
-        }
-    }
-
-    private func showPermissionGrantedRestartAlertIfNeeded() {
-        guard !didShowPermissionGrantedRestartAlert else {
-            return
-        }
-
-        didShowPermissionGrantedRestartAlert = true
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.messageText = "辅助功能权限已开启"
-        alert.informativeText = "YIYI 已获得辅助功能权限。请重启 YIYI，重启后即可正常使用划词翻译快捷键。"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "退出 YIYI")
-        alert.addButton(withTitle: "稍后")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            NSApplication.shared.terminate(nil)
-        }
-    }
-
-    private func configureGlobalHotKeyController() {
         let coordinator = GlobalHotKeyCoordinator(
             viewModel: settingsViewModel,
             onTrigger: { [weak self] in
@@ -217,12 +154,51 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         hotKeyCoordinator = coordinator
     }
 
+    private func showPermissionGuideWindow() {
+        if permissionWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 500, height: 246),
+                styleMask: [.titled, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "YIYI 权限引导"
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(
+                rootView: PermissionsGuideView(
+                    permissionService: permissionService,
+                    onReject: { NSApplication.shared.terminate(nil) },
+                    onOpenSettings: { [weak self] in self?.permissionService.requestRequiredPermissions() },
+                    onFinish: { [weak self] in self?.finishPermissionGuide() }
+                )
+            )
+            permissionWindow = window
+        }
+
+        permissionWindow?.center()
+        permissionWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func finishPermissionGuide() {
+        permissionService.refresh()
+        guard permissionService.hasFullPermission else {
+            return
+        }
+
+        permissionWindow?.close()
+        permissionWindow = nil
+        startIfRequiredPermissionsAreGranted()
+    }
+
     private func startSelectedTextCaptureFlow() {
         selectedTextCaptureTask?.cancel()
         let taskID = UUID()
         selectedTextCaptureTaskID = taskID
-        translationPanelViewModel.beginTranslation()
-        showFloatingPanel(activate: false)
+        floatingPanel?.orderOut(nil)
+        translationPanelViewModel.beginSelectionCapture()
 
         selectedTextCaptureTask = Task { @MainActor in
             defer {
@@ -232,12 +208,19 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
                 }
             }
 
-            await translationPanelViewModel.captureSelectedText()
+            let didCaptureSelectedText = await translationPanelViewModel.captureSelectedTextForTranslation()
             guard !Task.isCancelled else {
                 return
             }
 
+            showFloatingPanel(activate: false)
             resizeFloatingPanelToFitContent()
+
+            guard didCaptureSelectedText else {
+                return
+            }
+
+            translationPanelViewModel.translateCapturedText()
         }
     }
 

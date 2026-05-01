@@ -53,9 +53,10 @@ final class TranslationPanelViewModel: ObservableObject {
         return "\(totalTokens) tokens"
     }
 
-    func beginTranslation() {
+    func beginSelectionCapture() {
         cancelActiveTranslation()
-        status = .loading("准备翻译……")
+        status = .loading("读取选中文本……")
+        originalText = ""
         translatedText = ""
         totalTokens = nil
     }
@@ -67,9 +68,7 @@ final class TranslationPanelViewModel: ObservableObject {
         }
     }
 
-    func captureSelectedText() async {
-        beginTranslation()
-
+    func captureSelectedTextForTranslation() async -> Bool {
         do {
             originalText = try await selectedTextProvider.selectedText()
             try Task.checkCancellation()
@@ -77,19 +76,40 @@ final class TranslationPanelViewModel: ObservableObject {
                 settings.sourceLanguage = "自动识别"
                 settings.targetLanguage = TranslationLanguageDetectionService.defaultTargetLanguage(for: originalText)
             }
-            try await translateCurrentText()
+            status = .loading("翻译中……")
+            return true
         } catch {
             guard !Task.isCancelled, !(error is CancellationError) else {
-                return
+                return false
             }
 
+            originalText = ""
             translatedText = ""
             totalTokens = nil
-            status = .error(error.localizedDescription)
+            status = .error("未选中需要翻译的文本")
+            return false
         }
     }
 
+    func translateCapturedText() {
+        guard !originalText.isEmpty else {
+            translatedText = ""
+            totalTokens = nil
+            status = .error("未选中需要翻译的文本")
+            return
+        }
+
+        startTranslation(statusMessage: "翻译中……")
+    }
+
     func refreshTranslation() {
+        guard !originalText.isEmpty else {
+            translatedText = ""
+            totalTokens = nil
+            status = .error("未选中需要翻译的文本")
+            return
+        }
+
         startTranslation(statusMessage: "重新翻译中……")
     }
 
