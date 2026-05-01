@@ -5,7 +5,6 @@ struct TranslationPanelView: View {
     @ObservedObject var viewModel: TranslationPanelViewModel
     @State private var showsCopiedMessage = false
     @State private var isRefreshing = false
-    @State private var refreshRotation = 0.0
     @State private var loadingPulse = false
 
     let onRefreshTranslation: () -> Void
@@ -17,7 +16,7 @@ struct TranslationPanelView: View {
             translationBody
             actionBar
         }
-        .font(.system(size: 17))
+        .font(.body)
         .padding(12)
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
@@ -51,7 +50,7 @@ struct TranslationPanelView: View {
             languagePicker(selection: sourceLanguageSelection, options: SupportedLanguages.source)
                 .frame(width: 128)
             Image(systemName: "arrow.right")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
             languagePicker(selection: targetLanguageSelection, options: SupportedLanguages.target)
@@ -79,18 +78,16 @@ struct TranslationPanelView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if case let .error(message) = viewModel.status {
                     Text(message)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.orange)
+                        .font(.body.weight(.medium))
                 } else if case let .loading(message) = viewModel.status {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(message)
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.body.weight(.medium))
                             .foregroundStyle(.secondary)
 
                         VStack(alignment: .leading, spacing: 5) {
                             loadingBar(width: 210)
                             loadingBar(width: 285)
-                            loadingBar(width: 170)
                         }
                     }
                     .padding(.top, 3)
@@ -104,7 +101,7 @@ struct TranslationPanelView: View {
                     }
                 } else {
                     Text(viewModel.translatedText.isEmpty ? "译文会显示在这里" : viewModel.translatedText)
-                        .font(.system(size: 15))
+                        .font(.body)
                         .lineSpacing(2)
                         .foregroundStyle(.primary)
                         .textSelection(.enabled)
@@ -124,16 +121,16 @@ struct TranslationPanelView: View {
             .disabled(viewModel.translatedText.isEmpty || viewModel.status.isLoading)
 
             IconActionButton(
-                systemName: refreshIconName,
-                rotationDegrees: refreshRotation,
+                systemName: "arrow.clockwise",
                 action: refreshTranslation
             )
             .help("刷新")
+            .disabled(viewModel.originalText.isEmpty || viewModel.status.isLoading)
 
             Spacer(minLength: 0)
 
             Text(viewModel.tokenCountText)
-                .font(.system(size: 11, weight: .medium))
+                .font(.body.weight(.medium))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
@@ -149,7 +146,7 @@ struct TranslationPanelView: View {
         }
         .labelsHidden()
         .pickerStyle(.menu)
-        .font(.system(size: 17))
+        .font(.body)
         .controlSize(.regular)
     }
 
@@ -161,7 +158,7 @@ struct TranslationPanelView: View {
 
     private func toastView(_ message: String) -> some View {
         Text(message)
-            .font(.system(size: 13, weight: .medium))
+            .font(.caption.weight(.medium))
             .foregroundStyle(.white)
             .lineLimit(2)
             .multilineTextAlignment(.center)
@@ -186,18 +183,7 @@ struct TranslationPanelView: View {
 
     private func refreshTranslation() {
         isRefreshing = true
-        withAnimation(.easeInOut(duration: 0.45)) {
-            refreshRotation += 360
-        }
         onRefreshTranslation()
-    }
-
-    private var refreshIconName: String {
-        if isRefreshing {
-            return "progress.indicator"
-        }
-
-        return "arrow.clockwise"
     }
 
     private func handleRefreshStatusChange(_ status: TranslationStatus) {
@@ -207,12 +193,16 @@ struct TranslationPanelView: View {
 
         switch status {
         case .translated:
-            isRefreshing = false
+            stopRefreshing()
         case .error:
-            isRefreshing = false
+            stopRefreshing()
         case .ready, .loading:
             break
         }
+    }
+
+    private func stopRefreshing() {
+        isRefreshing = false
     }
 }
 
@@ -221,15 +211,13 @@ private struct IconActionButton: View {
     @State private var isHovered = false
 
     let systemName: String
-    var rotationDegrees = 0.0
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 13, weight: .medium))
-                .rotationEffect(.degrees(rotationDegrees))
-                .frame(width: 24, height: 24)
+                .font(.body.weight(.medium))
+                .frame(width: 28, height: 28)
                 .foregroundStyle(isEnabled ? Color.primary : Color.secondary.opacity(0.45))
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)

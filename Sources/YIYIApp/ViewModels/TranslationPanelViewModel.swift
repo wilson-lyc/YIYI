@@ -110,7 +110,7 @@ final class TranslationPanelViewModel: ObservableObject {
             return
         }
 
-        startTranslation(statusMessage: "重新翻译中……")
+        startTranslation(statusMessage: "翻译中……")
     }
 
     func updateSourceLanguage(_ language: String) {
@@ -127,7 +127,7 @@ final class TranslationPanelViewModel: ObservableObject {
         updateSettings { settings in
             settings.targetLanguage = language
         }
-        startTranslation(statusMessage: "正在切换语言……")
+        startTranslation(statusMessage: "翻译中……")
     }
 
     func copyTranslation() {
@@ -164,10 +164,6 @@ final class TranslationPanelViewModel: ObservableObject {
 
     private func translateCurrentText() async throws {
         status = .loading("翻译中……")
-        let progressTask = showTranslationProgressMessages()
-        defer {
-            progressTask.cancel()
-        }
 
         do {
             let translation = try await translationService.translate(text: originalText, settings: settings)
@@ -213,19 +209,4 @@ final class TranslationPanelViewModel: ObservableObject {
         }
     }
 
-    private func showTranslationProgressMessages() -> Task<Void, Never> {
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled, status.isLoading else {
-                return
-            }
-            status = .loading("正在等待结果……")
-
-            try? await Task.sleep(for: .seconds(13))
-            guard !Task.isCancelled, status.isLoading else {
-                return
-            }
-            status = .loading("还在翻译，请稍候……")
-        }
-    }
 }
