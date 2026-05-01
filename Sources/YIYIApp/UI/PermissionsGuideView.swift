@@ -7,15 +7,10 @@ struct PermissionsGuideView: View {
     let onFinish: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Label("开启 YIYI 所需权限", systemImage: "hand.point.up.left.fill")
-                    .font(.title3.weight(.semibold))
-
-                Text("划词翻译需要 macOS 辅助功能权限。开启后，YIYI 才会注册快捷键并开始监听划词翻译操作。")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("开启 YIYI 所需权限")
+                    .font(.headline)
             }
 
             VStack(spacing: 8) {
@@ -26,7 +21,7 @@ struct PermissionsGuideView: View {
 
             Divider()
 
-            HStack {
+            HStack(spacing: 6) {
                 Spacer()
 
                 if permissionService.hasFullPermission {
@@ -34,34 +29,32 @@ struct PermissionsGuideView: View {
                         onFinish()
                     }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
                 } else {
                     Button("拒绝并退出", role: .destructive) {
                         onReject()
                     }
-                    .controlSize(.large)
 
                     Button("配置权限") {
                         onOpenSettings()
                     }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
                 }
             }
         }
         .padding(.horizontal, 22)
         .padding(.top, 14)
-        .padding(.bottom, 18)
-        .frame(width: 500)
+        .padding(.bottom, 12)
+        .frame(width: 480)
         .background(LexiTheme.surface)
     }
 
     private func permissionRow(_ requirement: AppPermissionRequirement) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: requirement.isGranted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "accessibility")
                 .font(.title3)
-                .foregroundStyle(requirement.isGranted ? Color.green : LexiTheme.warm)
-                .frame(width: 24)
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(requirement.title)
@@ -78,8 +71,8 @@ struct PermissionsGuideView: View {
             Text(requirement.isGranted ? "已开启" : "未开启")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(requirement.isGranted ? Color.green : .secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
                 .background(LexiTheme.card, in: Capsule())
         }
         .padding(12)
