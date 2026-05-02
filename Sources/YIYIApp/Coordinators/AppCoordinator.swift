@@ -390,7 +390,14 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
             window.backgroundColor = .clear
             window.minSize = NSSize(width: 840, height: 660)
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(viewModel: settingsViewModel))
+            window.contentView = NSHostingView(
+                rootView: SettingsView(
+                    viewModel: settingsViewModel,
+                    onShortcutRecordingChanged: { [weak self] isRecording in
+                        self?.hotKeyCoordinator?.setSuspended(isRecording)
+                    }
+                )
+            )
             settingsWindow = window
         }
 

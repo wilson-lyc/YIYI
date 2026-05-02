@@ -9,6 +9,7 @@ final class GlobalHotKeyCoordinator {
 
     private var registrar: GlobalHotKeyRegistrar?
     private var settingsCancellable: AnyCancellable?
+    private var isSuspended = false
 
     init(
         viewModel: SettingsViewModel,
@@ -23,6 +24,20 @@ final class GlobalHotKeyCoordinator {
     func start() {
         bindShortcutPreference()
         register(currentShortcut)
+    }
+
+    func setSuspended(_ isSuspended: Bool) {
+        guard self.isSuspended != isSuspended else {
+            return
+        }
+
+        self.isSuspended = isSuspended
+
+        if isSuspended {
+            registrar?.unregister()
+        } else {
+            register(currentShortcut)
+        }
     }
 
     private var currentShortcut: AppShortcut {
@@ -41,6 +56,10 @@ final class GlobalHotKeyCoordinator {
     }
 
     private func register(_ shortcut: AppShortcut) {
+        guard !isSuspended else {
+            return
+        }
+
         if registrar?.matches(shortcut) == true {
             return
         }
@@ -58,13 +77,19 @@ final class GlobalHotKeyCoordinator {
             return
         }
 
+        guard nextRegistrar.isRegistered else {
+            restore(previousRegistrar, failedShortcut: shortcut)
+            return
+        }
+
         registrar = nextRegistrar
     }
 
     private func restore(_ previousRegistrar: GlobalHotKeyRegistrar?, failedShortcut: AppShortcut) {
+        onConflict(failedShortcut)
+
         // Keep the last working shortcut active when the user's new shortcut is unavailable.
         guard let previousRegistrar else {
-            onConflict(failedShortcut)
             return
         }
 
