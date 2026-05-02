@@ -11,7 +11,6 @@ struct TranslationPanelView: View {
     @ObservedObject var pinState: TranslationPanelPinState
     @State private var showsCopiedMessage = false
     @State private var isRefreshing = false
-    @State private var isSourceExpanded = false
 
     let onRefreshTranslation: () -> Void
     let onTogglePinned: () -> Void
@@ -24,7 +23,6 @@ struct TranslationPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             headerBar
-            sourceDisclosure
             translationBody
             actionBar
         }
@@ -112,10 +110,6 @@ struct TranslationPanelView: View {
                 .padding(contentPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .textBackgroundColor).opacity(0.22))
-        )
         .layoutPriority(1)
     }
 
@@ -126,42 +120,6 @@ struct TranslationPanelView: View {
         case .ready, .translated:
             return viewModel.translatedText.isEmpty ? "译文会显示在这里" : viewModel.translatedText
         }
-    }
-
-    private var sourceDisclosure: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            DisclosureGroup(isExpanded: $isSourceExpanded) {
-                ScrollView {
-                    Text(viewModel.originalText)
-                        .font(.callout)
-                        .lineSpacing(2)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .padding(.trailing, 2)
-                }
-                .frame(minHeight: 54, maxHeight: 126, alignment: .topLeading)
-                .padding(.top, 6)
-            } label: {
-                HStack(spacing: 7) {
-                    Text("原文")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(hasOriginalText ? .secondary : Color.secondary.opacity(0.45))
-
-                    Spacer(minLength: 0)
-                }
-            }
-            .disabled(!hasOriginalText)
-            .disclosureGroupStyle(.automatic)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .layoutPriority(2)
-        .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(Color(nsColor: .separatorColor).opacity(0.16))
-        )
     }
 
     private var actionBar: some View {
@@ -185,10 +143,6 @@ struct TranslationPanelView: View {
                 .monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var hasOriginalText: Bool {
-        !viewModel.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func languagePicker(selection: Binding<String>, options: [String]) -> some View {

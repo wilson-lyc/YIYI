@@ -119,14 +119,6 @@ struct SettingsView: View {
 
                 Divider()
 
-                settingsRow("开机自启", contentAlignment: .trailing) {
-                    Toggle("", isOn: $viewModel.settings.launchAtLogin)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-
-                Divider()
-
                 settingsRow("快捷键配置", contentAlignment: .trailing) {
                     shortcutSettingControl
                 }
@@ -143,26 +135,6 @@ struct SettingsView: View {
                     .frame(width: 230, alignment: .trailing)
                 }
 
-                Divider()
-
-                settingsRow("窗口尺寸", contentAlignment: .trailing) {
-                    HStack(spacing: 10) {
-                        Stepper(
-                            "宽 \(viewModel.settings.translationPanelWidth)",
-                            value: $viewModel.settings.translationPanelWidth,
-                            in: AppSettings.translationPanelWidthRange,
-                            step: 20
-                        )
-
-                        Stepper(
-                            "高 \(viewModel.settings.translationPanelHeight)",
-                            value: $viewModel.settings.translationPanelHeight,
-                            in: AppSettings.translationPanelHeightRange,
-                            step: 20
-                        )
-                    }
-                    .frame(width: 300, alignment: .trailing)
-                }
             }
 
         }
