@@ -80,6 +80,10 @@ final class GlobalHotKeyRegistrar {
         AppShortcut(keyCode: keyCode, modifiers: modifiers, display: display)
     }
 
+    var isRegistered: Bool {
+        hotKeyRef != nil && eventHandlerRef != nil
+    }
+
     func matches(_ shortcut: AppShortcut) -> Bool {
         keyCode == shortcut.keyCode && modifiers == shortcut.modifiers
     }

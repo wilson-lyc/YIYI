@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
+    var onShortcutRecordingChanged: (Bool) -> Void = { _ in }
 
     @State private var hoveredModelID: UUID?
     @State private var hoveredPromptID: UUID?
@@ -169,7 +170,10 @@ struct SettingsView: View {
     }
 
     private var shortcutSettingControl: some View {
-        GlobalHotKeySettingControl(viewModel: viewModel)
+        GlobalHotKeySettingControl(
+            viewModel: viewModel,
+            onRecordingChanged: onShortcutRecordingChanged
+        )
     }
 
     private var modelsPage: some View {

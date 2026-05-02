@@ -151,8 +151,12 @@ final class TranslationPanelViewModel: ObservableObject {
     }
 
     private func selectionCaptureErrorMessage(for error: Error) -> String {
+        if case SelectedTextService.ProviderError.accessibilityPermissionMissing = error {
+            return error.localizedDescription
+        }
+
         if case SelectedTextService.ProviderError.selectionReadTimedOut = error {
-            return "文本读取失败"
+            return "未选中需要翻译的文本"
         }
 
         return "未选中需要翻译的文本"

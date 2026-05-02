@@ -4,6 +4,7 @@ import SwiftUI
 
 struct GlobalHotKeySettingControl: View {
     @ObservedObject var viewModel: SettingsViewModel
+    var onRecordingChanged: (Bool) -> Void = { _ in }
     private let shortcutAvailability: ShortcutAvailabilityChecking = ShortcutAvailabilityService()
 
     @State private var isRecording = false
@@ -44,6 +45,7 @@ struct GlobalHotKeySettingControl: View {
         .background {
             ShortcutRecorder(
                 isRecording: $isRecording,
+                onRecordingChanged: onRecordingChanged,
                 onRecord: handleRecordedShortcut
             )
         }
@@ -85,19 +87,28 @@ struct GlobalHotKeySettingControl: View {
 
 private struct ShortcutRecorder: NSViewRepresentable {
     @Binding var isRecording: Bool
+    let onRecordingChanged: (Bool) -> Void
     let onRecord: (AppShortcut) -> Bool
 
     func makeNSView(context: Context) -> NSView {
-        NSView(frame: .zero)
+        ShortcutRecorderView(coordinator: context.coordinator)
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.parent = self
-        context.coordinator.setRecording(isRecording)
+        guard let recorderView = nsView as? ShortcutRecorderView else {
+            return
+        }
+
+        recorderView.setRecording(isRecording)
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.setRecording(false)
+        guard let recorderView = nsView as? ShortcutRecorderView else {
+            return
+        }
+
+        recorderView.setRecording(false)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -107,26 +118,22 @@ private struct ShortcutRecorder: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         var parent: ShortcutRecorder
-        private var monitor: Any?
+        private var isRecording = false
 
         init(parent: ShortcutRecorder) {
             self.parent = parent
         }
 
         func setRecording(_ isRecording: Bool) {
-            if isRecording, monitor == nil {
-                // Captures one keyDown and returns nil so the shortcut does not leak into the UI.
-                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                    self?.handle(event)
-                    return nil
-                }
-            } else if !isRecording, let monitor {
-                NSEvent.removeMonitor(monitor)
-                self.monitor = nil
+            guard self.isRecording != isRecording else {
+                return
             }
+
+            self.isRecording = isRecording
+            parent.onRecordingChanged(isRecording)
         }
 
-        private func handle(_ event: NSEvent) {
+        func handle(_ event: NSEvent) {
             if event.keyCode == UInt16(kVK_Escape) {
                 parent.isRecording = false
                 return
@@ -141,6 +148,41 @@ private struct ShortcutRecorder: NSViewRepresentable {
                 parent.isRecording = false
             }
         }
+    }
+}
+
+private final class ShortcutRecorderView: NSView {
+    private let coordinator: ShortcutRecorder.Coordinator
+
+    init(coordinator: ShortcutRecorder.Coordinator) {
+        self.coordinator = coordinator
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var acceptsFirstResponder: Bool {
+        true
+    }
+
+    func setRecording(_ isRecording: Bool) {
+        coordinator.setRecording(isRecording)
+
+        guard isRecording else {
+            if window?.firstResponder === self {
+                window?.makeFirstResponder(nil)
+            }
+            return
+        }
+
+        window?.makeFirstResponder(self)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        coordinator.handle(event)
     }
 }
 
