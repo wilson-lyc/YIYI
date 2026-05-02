@@ -3,6 +3,8 @@ import Foundation
 
 @MainActor
 final class TranslationPanelViewModel: ObservableObject {
+    private static let selectionCaptureTimeout: Duration = .seconds(4)
+
     @Published var originalText: String
     @Published var translatedText: String
     @Published var status: TranslationStatus
@@ -70,8 +72,9 @@ final class TranslationPanelViewModel: ObservableObject {
 
     func captureSelectedTextForTranslation() async -> Bool {
         do {
-            originalText = try await selectedTextProvider.selectedText()
+            let capturedText = try await selectedTextWithTimeout()
             try Task.checkCancellation()
+            originalText = capturedText
             updateSettings { settings in
                 settings.sourceLanguage = "自动识别"
                 settings.targetLanguage = TranslationLanguageDetectionService.defaultTargetLanguage(for: originalText)
@@ -146,20 +149,64 @@ final class TranslationPanelViewModel: ObservableObject {
         toast = nil
     }
 
-    private func showToast(_ message: String) {
-        toast = ToastMessage(message: message)
-    }
-
     private func selectionCaptureErrorMessage(for error: Error) -> String {
         if case SelectedTextService.ProviderError.accessibilityPermissionMissing = error {
             return error.localizedDescription
         }
 
         if case SelectedTextService.ProviderError.selectionReadTimedOut = error {
-            return "未选中需要翻译的文本"
+            return error.localizedDescription
         }
 
         return "未选中需要翻译的文本"
+    }
+
+    private func selectedTextWithTimeout() async throws -> String {
+        let selectedTextProvider = selectedTextProvider
+        let captureTask = Task.detached(priority: .userInitiated) {
+            try await selectedTextProvider.selectedText()
+        }
+
+        let timeoutTask = Task<String, Error>.detached(priority: .userInitiated) {
+            try await Task.sleep(for: Self.selectionCaptureTimeout)
+            throw SelectedTextService.ProviderError.selectionReadTimedOut
+        }
+
+        do {
+            let text = try await race(captureTask, against: timeoutTask)
+            captureTask.cancel()
+            timeoutTask.cancel()
+            return text
+        } catch {
+            captureTask.cancel()
+            timeoutTask.cancel()
+            throw error
+        }
+    }
+
+    private func race(
+        _ firstTask: Task<String, Error>,
+        against secondTask: Task<String, Error>
+    ) async throws -> String {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            let raceState = TranslationPanelTaskRaceState()
+
+            Task.detached(priority: .userInitiated) {
+                do {
+                    raceState.resume(continuation, with: .success(try await firstTask.value))
+                } catch {
+                    raceState.resume(continuation, with: .failure(error))
+                }
+            }
+
+            Task.detached(priority: .userInitiated) {
+                do {
+                    raceState.resume(continuation, with: .success(try await secondTask.value))
+                } catch {
+                    raceState.resume(continuation, with: .failure(error))
+                }
+            }
+        }
     }
 
     private func updateSettings(_ update: (inout AppSettings) -> Void) {
@@ -177,18 +224,11 @@ final class TranslationPanelViewModel: ObservableObject {
     private func translateCurrentText() async throws {
         status = .loading("翻译中……")
 
-        do {
-            let translation = try await translationService.translate(text: originalText, settings: settings)
-            try Task.checkCancellation()
-            translatedText = translation.text
-            totalTokens = translation.totalTokens
-            status = .translated
-        } catch {
-            if let translationError = error as? TranslationError, translationError.isTimeout {
-                showToast(error.localizedDescription)
-            }
-            throw error
-        }
+        let translation = try await translationService.translate(text: originalText, settings: settings)
+        try Task.checkCancellation()
+        translatedText = translation.text
+        totalTokens = translation.totalTokens
+        status = .translated
     }
 
     private func startTranslation(statusMessage: String) {
@@ -221,4 +261,21 @@ final class TranslationPanelViewModel: ObservableObject {
         }
     }
 
+}
+
+private final class TranslationPanelTaskRaceState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didResume = false
+
+    func resume(_ continuation: CheckedContinuation<String, Error>, with result: Result<String, Error>) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !didResume else {
+            return
+        }
+
+        didResume = true
+        continuation.resume(with: result)
+    }
 }

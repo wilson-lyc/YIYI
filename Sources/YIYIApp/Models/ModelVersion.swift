@@ -36,11 +36,14 @@ struct ModelVersion: Identifiable, Codable, Equatable, Sendable {
 }
 
 extension ModelVersion {
-    static let defaultOpenAI = ModelVersion(
+    static let defaultDeepSeek = ModelVersion(
         id: UUID(uuidString: "D7F24194-8D7A-432B-9B59-5691491D1B5D")!,
         name: "默认模型",
-        baseURL: "https://api.openai.com/v1",
+        baseURL: "https://api.deepseek.com",
         apiKey: "",
-        modelName: "gpt-4o-mini"
+        modelName: "deepseek-v4-flash",
+        extraBodyJSON: #"{"thinking": {"type": "disabled"}}"#
     )
+
+    static let defaultOpenAI = defaultDeepSeek
 }

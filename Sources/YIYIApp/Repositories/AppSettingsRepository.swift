@@ -37,9 +37,10 @@ extension AppSettingsRepository {
 
         let model = ModelVersion(
             name: "默认模型",
-            baseURL: config.baseURL ?? "https://api.openai.com/v1",
+            baseURL: config.baseURL ?? ModelVersion.defaultDeepSeek.baseURL,
             apiKey: config.apiKey ?? "",
-            modelName: config.model ?? "gpt-4o-mini"
+            modelName: config.model ?? ModelVersion.defaultDeepSeek.modelName,
+            extraBodyJSON: ModelVersion.defaultDeepSeek.extraBodyJSON
         )
         let settings = AppSettings(
             sourceLanguage: config.sourceLanguage ?? "自动识别",
@@ -99,7 +100,7 @@ enum AppSettingsStore {
             requestTimeoutSeconds: document.int(nil, "request_timeout_seconds") ?? AppSettings.defaultRequestTimeoutSeconds,
             translationPanelWidth: document.int("window", "translation_panel_width") ?? AppSettings.defaultTranslationPanelWidth,
             translationPanelHeight: document.int("window", "translation_panel_height") ?? AppSettings.defaultTranslationPanelHeight,
-            modelVersions: models.isEmpty ? [.defaultOpenAI] : models,
+            modelVersions: models.isEmpty ? [.defaultDeepSeek] : models,
             activeModelVersionID: activeModelID,
             promptVersions: prompts.isEmpty ? [.defaultTranslation] : prompts,
             activePromptVersionID: activePromptID
@@ -243,21 +244,24 @@ enum AppSettingsStore {
             "[translation]",
             "source_language = \(tomlString(settings.sourceLanguage))",
             "target_language = \(tomlString(settings.targetLanguage))",
-            "",
-            "[models]",
-            "active_id = \(tomlString(settings.activeModelVersionID.uuidString))"
         ]
 
-        for model in settings.modelVersions {
+        if !settings.modelVersions.isEmpty {
             lines.append("")
-            lines.append("[models.\(model.id.uuidString)]")
-            lines.append("id = \(tomlString(model.id.uuidString))")
-            lines.append("name = \(tomlString(model.name))")
-            lines.append("protocol = \(tomlString("openai"))")
-            lines.append("base_url = \(tomlString(model.baseURL))")
-            lines.append("api_key = \(tomlString(model.apiKey))")
-            lines.append("model = \(tomlString(model.modelName))")
-            lines.append("extra_body_json = \(tomlString(model.extraBodyJSON))")
+            lines.append("[models]")
+            lines.append("active_id = \(tomlString(settings.activeModelVersionID.uuidString))")
+
+            for model in settings.modelVersions {
+                lines.append("")
+                lines.append("[models.\(model.id.uuidString)]")
+                lines.append("id = \(tomlString(model.id.uuidString))")
+                lines.append("name = \(tomlString(model.name))")
+                lines.append("protocol = \(tomlString("openai"))")
+                lines.append("base_url = \(tomlString(model.baseURL))")
+                lines.append("api_key = \(tomlString(model.apiKey))")
+                lines.append("model = \(tomlString(model.modelName))")
+                lines.append("extra_body_json = \(tomlString(model.extraBodyJSON))")
+            }
         }
 
         lines.append("")

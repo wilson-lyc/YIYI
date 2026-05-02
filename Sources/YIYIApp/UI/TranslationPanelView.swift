@@ -1,20 +1,27 @@
 import SwiftUI
 import AppKit
 
+@MainActor
+final class TranslationPanelPinState: ObservableObject {
+    @Published var isPinned = false
+}
+
 struct TranslationPanelView: View {
     @ObservedObject var viewModel: TranslationPanelViewModel
+    @ObservedObject var pinState: TranslationPanelPinState
     @State private var showsCopiedMessage = false
     @State private var isRefreshing = false
-    @State private var loadingPulse = false
 
     let onRefreshTranslation: () -> Void
+    let onTogglePinned: () -> Void
 
-    private let panelHorizontalPadding: CGFloat = 10
+    private let panelHorizontalPadding: CGFloat = 12
     private let panelBottomPadding: CGFloat = 10
-    private let contentPadding: CGFloat = 5
+    private let contentPadding: CGFloat = 8
+    private let languagePickerWidth: CGFloat = 106
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             headerBar
             translationBody
             actionBar
@@ -58,15 +65,24 @@ struct TranslationPanelView: View {
     private var headerBar: some View {
         HStack(spacing: 8) {
             languagePicker(selection: sourceLanguageSelection, options: SupportedLanguages.source)
-                .frame(width: 128)
+                .frame(width: languagePickerWidth)
             Image(systemName: "arrow.right")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
             languagePicker(selection: targetLanguageSelection, options: SupportedLanguages.target)
-                .frame(width: 128)
+                .frame(width: languagePickerWidth)
+
+            Spacer(minLength: 0)
+
+            IconActionButton(
+                systemName: pinState.isPinned ? "pin.fill" : "pin",
+                action: onTogglePinned
+            )
+            .help(pinState.isPinned ? "取消固定" : "固定窗口")
+            .frame(width: 32, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
     }
 
     private var targetLanguageSelection: Binding<String> {
@@ -85,43 +101,25 @@ struct TranslationPanelView: View {
 
     private var translationBody: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if case let .error(message) = viewModel.status {
-                    Text(message)
-                        .font(.body.weight(.medium))
-                } else if case let .loading(message) = viewModel.status {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(message)
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.secondary)
-
-                        VStack(alignment: .leading, spacing: 5) {
-                            loadingBar(width: 210)
-                            loadingBar(width: 285)
-                        }
-                    }
-                    .padding(.top, 3)
-                    .opacity(loadingPulse ? 0.42 : 1)
-                    .animation(.easeInOut(duration: 0.72).repeatForever(autoreverses: true), value: loadingPulse)
-                    .onAppear {
-                        loadingPulse = true
-                    }
-                    .onDisappear {
-                        loadingPulse = false
-                    }
-                } else {
-                    Text(viewModel.translatedText.isEmpty ? "译文会显示在这里" : viewModel.translatedText)
-                        .font(.title3)
-                        .lineSpacing(3)
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(contentPadding)
+            Text(translationDisplayText)
+                .font(.title3)
+                .lineSpacing(3)
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(contentPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .layoutPriority(1)
+    }
+
+    private var translationDisplayText: String {
+        switch viewModel.status {
+        case .loading(let message), .error(let message):
+            return message
+        case .ready, .translated:
+            return viewModel.translatedText.isEmpty ? "译文会显示在这里" : viewModel.translatedText
+        }
     }
 
     private var actionBar: some View {
@@ -243,7 +241,9 @@ private struct IconActionButton: View {
 #Preview("翻译窗口 - 已翻译") {
     TranslationPanelView(
         viewModel: .translatedPreview,
-        onRefreshTranslation: {}
+        pinState: TranslationPanelPinState(),
+        onRefreshTranslation: {},
+        onTogglePinned: {}
     )
     .padding()
     .background(Color(nsColor: .windowBackgroundColor))
@@ -252,7 +252,9 @@ private struct IconActionButton: View {
 #Preview("翻译窗口 - 加载中") {
     TranslationPanelView(
         viewModel: .loadingPreview,
-        onRefreshTranslation: {}
+        pinState: TranslationPanelPinState(),
+        onRefreshTranslation: {},
+        onTogglePinned: {}
     )
     .padding()
     .background(Color(nsColor: .windowBackgroundColor))
@@ -261,7 +263,9 @@ private struct IconActionButton: View {
 #Preview("翻译窗口 - 错误") {
     TranslationPanelView(
         viewModel: .errorPreview,
-        onRefreshTranslation: {}
+        pinState: TranslationPanelPinState(),
+        onRefreshTranslation: {},
+        onTogglePinned: {}
     )
     .padding()
     .background(Color(nsColor: .windowBackgroundColor))
