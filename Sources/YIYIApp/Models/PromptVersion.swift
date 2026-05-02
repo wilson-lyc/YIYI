@@ -45,9 +45,7 @@ extension PromptVersion {
     """
 
     static let defaultPrompt = """
-    Source language setting: {{sourceLanguage}}
-    Target language: {{targetLanguage}}
-
+    Selected text:
     {{selectedText}}
     """
 

@@ -146,17 +146,13 @@ final class TranslationPanelViewModel: ObservableObject {
         toast = nil
     }
 
-    private func showToast(_ message: String) {
-        toast = ToastMessage(message: message)
-    }
-
     private func selectionCaptureErrorMessage(for error: Error) -> String {
         if case SelectedTextService.ProviderError.accessibilityPermissionMissing = error {
             return error.localizedDescription
         }
 
         if case SelectedTextService.ProviderError.selectionReadTimedOut = error {
-            return "未选中需要翻译的文本"
+            return error.localizedDescription
         }
 
         return "未选中需要翻译的文本"
@@ -177,18 +173,11 @@ final class TranslationPanelViewModel: ObservableObject {
     private func translateCurrentText() async throws {
         status = .loading("翻译中……")
 
-        do {
-            let translation = try await translationService.translate(text: originalText, settings: settings)
-            try Task.checkCancellation()
-            translatedText = translation.text
-            totalTokens = translation.totalTokens
-            status = .translated
-        } catch {
-            if let translationError = error as? TranslationError, translationError.isTimeout {
-                showToast(error.localizedDescription)
-            }
-            throw error
-        }
+        let translation = try await translationService.translate(text: originalText, settings: settings)
+        try Task.checkCancellation()
+        translatedText = translation.text
+        totalTokens = translation.totalTokens
+        status = .translated
     }
 
     private func startTranslation(statusMessage: String) {

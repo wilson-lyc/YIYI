@@ -26,7 +26,7 @@ struct AppSettings: Decodable, Equatable, Sendable {
     var requestTimeoutSeconds = Self.defaultRequestTimeoutSeconds
     var translationPanelWidth = Self.defaultTranslationPanelWidth
     var translationPanelHeight = Self.defaultTranslationPanelHeight
-    var modelVersions = [ModelVersion.defaultOpenAI]
+    var modelVersions = [ModelVersion.defaultDeepSeek]
     var activeModelVersionID = ModelVersion.defaultOpenAI.id
     var promptVersions = [PromptVersion.defaultTranslation]
     var activePromptVersionID = PromptVersion.defaultTranslation.id
@@ -42,7 +42,7 @@ struct AppSettings: Decodable, Equatable, Sendable {
         requestTimeoutSeconds: Int = AppSettings.defaultRequestTimeoutSeconds,
         translationPanelWidth: Int = AppSettings.defaultTranslationPanelWidth,
         translationPanelHeight: Int = AppSettings.defaultTranslationPanelHeight,
-        modelVersions: [ModelVersion] = [ModelVersion.defaultOpenAI],
+        modelVersions: [ModelVersion] = [ModelVersion.defaultDeepSeek],
         activeModelVersionID: UUID = ModelVersion.defaultOpenAI.id,
         promptVersions: [PromptVersion] = [PromptVersion.defaultTranslation],
         activePromptVersionID: UUID = PromptVersion.defaultTranslation.id
@@ -95,7 +95,7 @@ struct AppSettings: Decodable, Equatable, Sendable {
     func normalized() -> AppSettings {
         var settings = self
         if settings.modelVersions.isEmpty {
-            settings.modelVersions = [.defaultOpenAI]
+            settings.modelVersions = [.defaultDeepSeek]
         }
 
         if !settings.modelVersions.contains(where: { $0.id == settings.activeModelVersionID }) {

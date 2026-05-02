@@ -9,6 +9,8 @@ protocol SelectedTextProviding: Sendable {
 }
 
 struct SelectedTextService: SelectedTextProviding {
+    private static let selectionReadTimeout: Duration = .seconds(3)
+
     enum ProviderError: LocalizedError {
         case accessibilityPermissionMissing
         case emptySelection
@@ -27,7 +29,7 @@ struct SelectedTextService: SelectedTextProviding {
     }
 
     func selectedText() async throws -> String {
-        return try await selectedText(timeout: .seconds(3))
+        return try await selectedText(timeout: Self.selectionReadTimeout)
     }
 
     private func selectedText(timeout: Duration) async throws -> String {

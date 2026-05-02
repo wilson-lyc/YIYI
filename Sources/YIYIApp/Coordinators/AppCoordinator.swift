@@ -6,6 +6,7 @@ import SwiftUI
 final class AppCoordinator: NSObject, NSWindowDelegate {
     private let settingsState: AppSettingsState
     private let translationPanelViewModel: TranslationPanelViewModel
+    private let translationPanelPinState = TranslationPanelPinState()
     private let settingsViewModel: SettingsViewModel
     private let permissionService: AppPermissionService
     private var statusItem: NSStatusItem?
@@ -203,9 +204,8 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         selectedTextCaptureTask?.cancel()
         let taskID = UUID()
         selectedTextCaptureTaskID = taskID
-        let shouldRestoreVisiblePanel = floatingPanel?.isVisible == true
-        floatingPanel?.orderOut(nil)
         translationPanelViewModel.beginSelectionCapture()
+        showFloatingPanel(activate: false)
 
         selectedTextCaptureTask = Task { @MainActor in
             defer {
@@ -220,10 +220,7 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
                 return
             }
 
-            if shouldRestoreVisiblePanel {
-                applyFloatingPanelSize(settingsState.settings, animate: false)
-            }
-            showFloatingPanel(activate: false)
+            showFloatingPanel(activate: true)
 
             guard didCaptureSelectedText else {
                 return
@@ -233,7 +230,7 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         }
     }
 
-    private func showFloatingPanel(activate: Bool) {
+    private func showFloatingPanel(activate: Bool = true) {
         if floatingPanel == nil {
             floatingPanel = makeFloatingPanel()
         }
@@ -245,8 +242,8 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         }
 
         if activate {
-            floatingPanel?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            floatingPanel?.makeKeyAndOrderFront(nil)
         } else {
             floatingPanel?.orderFrontRegardless()
         }
@@ -260,7 +257,7 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
                 width: settingsState.settings.translationPanelWidth,
                 height: settingsState.settings.translationPanelHeight
             ),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -268,6 +265,7 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         panel.titleVisibility = .hidden
         panel.isReleasedWhenClosed = false
         panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.titlebarAppearsTransparent = true
@@ -296,7 +294,9 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
         let hostingView = NSHostingView(
             rootView: TranslationPanelView(
                 viewModel: translationPanelViewModel,
-                onRefreshTranslation: { [weak self] in self?.translationPanelViewModel.refreshTranslation() }
+                pinState: translationPanelPinState,
+                onRefreshTranslation: { [weak self] in self?.translationPanelViewModel.refreshTranslation() },
+                onTogglePinned: { [weak self] in self?.toggleTranslationPanelPinned() }
             )
         )
         hostingView.translatesAutoresizingMaskIntoConstraints = false
@@ -346,6 +346,44 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
             return
         }
 
+        translationPanelPinState.isPinned = false
+        cancelTranslationPanelWork()
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        guard
+            let resigningPanel = notification.object as? NSPanel,
+            resigningPanel === floatingPanel,
+            !translationPanelPinState.isPinned
+        else {
+            return
+        }
+
+        dismissFloatingPanel(cancelWork: true)
+    }
+
+    private func toggleTranslationPanelPinned() {
+        let nextPinnedState = !translationPanelPinState.isPinned
+        translationPanelPinState.isPinned = nextPinnedState
+
+        guard !nextPinnedState else {
+            return
+        }
+
+        dismissFloatingPanel(cancelWork: true)
+    }
+
+    private func dismissFloatingPanel(cancelWork: Bool) {
+        floatingPanel?.orderOut(nil)
+
+        guard cancelWork else {
+            return
+        }
+
+        cancelTranslationPanelWork()
+    }
+
+    private func cancelTranslationPanelWork() {
         selectedTextCaptureTask?.cancel()
         selectedTextCaptureTask = nil
         selectedTextCaptureTaskID = nil

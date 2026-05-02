@@ -41,7 +41,6 @@ final class AppPermissionService: ObservableObject {
 
     func requestRequiredPermissions() {
         requestAccessibilityPermissionIfNeeded()
-        openAccessibilitySettings()
     }
 
     func startMonitoring(onFullPermissionGranted: @escaping () -> Void) {
