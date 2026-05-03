@@ -218,7 +218,8 @@ struct SettingsView: View {
             modelActionRow(
                 model: model.wrappedValue,
                 isActive: viewModel.settings.activeModelVersionID == model.wrappedValue.id,
-                canDelete: viewModel.settings.modelVersions.count > 1,
+                canDelete: viewModel.settings.modelVersions.count > 1 &&
+                    viewModel.settings.activeModelVersionID != model.wrappedValue.id,
                 canActivate: viewModel.modelConnectionTestState == .success,
                 onActivate: { viewModel.activateModelVersion(id: model.wrappedValue.id) },
                 onDelete: {
@@ -279,7 +280,7 @@ struct SettingsView: View {
 
             Button(role: .destructive, action: onDelete) {
                 Text("删除")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(canDelete ? .red : SettingsPalette.disabledText)
             }
             .disabled(!canDelete)
         }
@@ -349,8 +350,11 @@ struct SettingsView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("提示词")
+                    Text("用户提示词")
                         .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text("可插入变量：{{selectedText}} 表示选中文本，{{targetLanguage}} 表示目标语言。")
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                     editor(text: prompt.prompt, height: editorHeight)
                 }
@@ -360,7 +364,8 @@ struct SettingsView: View {
                 isActive: viewModel.settings.activePromptVersionID == prompt.wrappedValue.id,
                 activateTitle: "设为当前",
                 deleteTitle: "删除",
-                canDelete: viewModel.settings.promptVersions.count > 1,
+                canDelete: viewModel.settings.promptVersions.count > 1 &&
+                    viewModel.settings.activePromptVersionID != prompt.wrappedValue.id,
                 onActivate: { viewModel.activatePromptVersion(id: prompt.wrappedValue.id) },
                 onDelete: {
                     viewModel.deletePromptVersion(id: prompt.wrappedValue.id)
@@ -587,10 +592,7 @@ struct SettingsView: View {
     }
 
     private func editor(text: Binding<String>, height: CGFloat) -> some View {
-        TextEditor(text: text)
-            .font(.system(.body, design: .monospaced))
-            .scrollContentBackground(.hidden)
-            .padding(8)
+        SettingsTextEditor(text: text)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
             .overlay(
                 RoundedRectangle(cornerRadius: 7)
@@ -616,13 +618,13 @@ struct SettingsView: View {
                 Button(activateTitle, action: onActivate)
             }
 
+            Spacer()
+
             Button(role: .destructive, action: onDelete) {
                 Text(deleteTitle)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(canDelete ? .red : SettingsPalette.disabledText)
             }
             .disabled(!canDelete)
-
-            Spacer()
         }
     }
 
@@ -673,6 +675,78 @@ struct SettingsView: View {
     }
 }
 
+private struct SettingsTextEditor: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.verticalScroller?.controlSize = .small
+
+        let textView = NSTextView()
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.textColor = .labelColor
+        textView.drawsBackground = false
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.allowsUndo = true
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+        textView.textContainer?.lineFragmentPadding = 0
+
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return
+        }
+
+        if textView.string != text {
+            textView.string = text
+        }
+        textView.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.textColor = .labelColor
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding private var text: String
+        weak var textView: NSTextView?
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else {
+                return
+            }
+            text = textView.string
+        }
+    }
+}
+
 private struct SettingsScrollOffsetPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
@@ -694,6 +768,7 @@ private enum SettingsPalette {
     })
     static let hover = selection
     static let accent = Color(nsColor: .controlAccentColor)
+    static let disabledText = Color(nsColor: .disabledControlTextColor)
 }
 
 #if DEBUG

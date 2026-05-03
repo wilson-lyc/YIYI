@@ -169,7 +169,7 @@ enum SettingsPage: CaseIterable, Identifiable {
         case .models:
             return "模型"
         case .prompts:
-            return "提示词"
+            return "用户提示词"
         }
     }
 
