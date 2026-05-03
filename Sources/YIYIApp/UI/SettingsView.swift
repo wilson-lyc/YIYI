@@ -57,10 +57,10 @@ struct SettingsView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: page.symbolName)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                     .frame(width: 16)
                 Text(page.title)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.body)
                 Spacer()
             }
             .contentShape(Rectangle())
@@ -208,7 +208,7 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("请求 JSON")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.secondary)
                     editor(text: model.extraBodyJSON, height: 96)
                         .help(#"例如 {"thinking":{"type":"disabled"}}"#)
@@ -255,7 +255,7 @@ struct SettingsView: View {
         HStack(spacing: 10) {
             if isActive {
                 Label("正在使用", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(SettingsPalette.accent)
             } else {
                 Button("设为当前", action: onActivate)
@@ -342,7 +342,7 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("系统提示词")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.secondary)
                     editor(text: prompt.systemPrompt, height: editorHeight)
                 }
@@ -351,10 +351,10 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("用户提示词")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.secondary)
                     Text("可插入变量：{{selectedText}} 表示选中文本，{{targetLanguage}} 表示目标语言。")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                     editor(text: prompt.prompt, height: editorHeight)
                 }
@@ -410,10 +410,10 @@ struct SettingsView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: activeID == item.id ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.body.weight(.medium))
                             .foregroundStyle(activeID == item.id ? SettingsPalette.accent : .secondary)
                         Text(item[keyPath: title])
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.body.weight(.medium))
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
@@ -434,7 +434,7 @@ struct SettingsView: View {
 
             Button(action: onAdd) {
                 Label(addTitle, systemImage: "plus")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                     .contentShape(Rectangle())
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8)
@@ -525,7 +525,7 @@ struct SettingsView: View {
     private func pageHeader(_ title: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.title3.weight(.semibold))
             Spacer()
         }
         .padding(.horizontal, 24)
@@ -581,7 +581,7 @@ struct SettingsView: View {
     ) -> some View {
         HStack(alignment: .center, spacing: 12) {
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .font(.body.weight(.medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 84, alignment: .leading)
 
@@ -612,7 +612,7 @@ struct SettingsView: View {
         HStack(spacing: 10) {
             if isActive {
                 Label("当前", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(SettingsPalette.accent)
             } else {
                 Button(activateTitle, action: onActivate)
@@ -630,7 +630,7 @@ struct SettingsView: View {
 
     private func emptyState(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 13, weight: .medium))
+            .font(.body.weight(.medium))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 120)
             .background(SettingsPalette.panel, in: RoundedRectangle(cornerRadius: 8))
