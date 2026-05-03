@@ -102,8 +102,8 @@ final class AppCoordinator: NSObject, NSWindowDelegate {
     }
 
     private func configureStatusBar() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: "YIYI")
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.image = NSImage(systemSymbolName: "translate", accessibilityDescription: "YIYI")
         item.button?.imagePosition = .imageOnly
         item.button?.title = ""
         statusItem = item

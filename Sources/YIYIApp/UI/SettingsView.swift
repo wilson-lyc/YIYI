@@ -57,10 +57,10 @@ struct SettingsView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: page.symbolName)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                     .frame(width: 16)
                 Text(page.title)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.body)
                 Spacer()
             }
             .contentShape(Rectangle())
@@ -208,7 +208,7 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("请求 JSON")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.secondary)
                     editor(text: model.extraBodyJSON, height: 96)
                         .help(#"例如 {"thinking":{"type":"disabled"}}"#)
@@ -218,7 +218,8 @@ struct SettingsView: View {
             modelActionRow(
                 model: model.wrappedValue,
                 isActive: viewModel.settings.activeModelVersionID == model.wrappedValue.id,
-                canDelete: viewModel.settings.modelVersions.count > 1,
+                canDelete: viewModel.settings.modelVersions.count > 1 &&
+                    viewModel.settings.activeModelVersionID != model.wrappedValue.id,
                 canActivate: viewModel.modelConnectionTestState == .success,
                 onActivate: { viewModel.activateModelVersion(id: model.wrappedValue.id) },
                 onDelete: {
@@ -254,7 +255,7 @@ struct SettingsView: View {
         HStack(spacing: 10) {
             if isActive {
                 Label("正在使用", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(SettingsPalette.accent)
             } else {
                 Button("设为当前", action: onActivate)
@@ -279,7 +280,7 @@ struct SettingsView: View {
 
             Button(role: .destructive, action: onDelete) {
                 Text("删除")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(canDelete ? .red : SettingsPalette.disabledText)
             }
             .disabled(!canDelete)
         }
@@ -341,7 +342,7 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("系统提示词")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(.secondary)
                     editor(text: prompt.systemPrompt, height: editorHeight)
                 }
@@ -349,8 +350,11 @@ struct SettingsView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("提示词")
-                        .font(.system(size: 13, weight: .medium))
+                    Text("用户提示词")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Text("可插入变量：{{selectedText}} 表示选中文本，{{targetLanguage}} 表示目标语言。")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                     editor(text: prompt.prompt, height: editorHeight)
                 }
@@ -360,7 +364,8 @@ struct SettingsView: View {
                 isActive: viewModel.settings.activePromptVersionID == prompt.wrappedValue.id,
                 activateTitle: "设为当前",
                 deleteTitle: "删除",
-                canDelete: viewModel.settings.promptVersions.count > 1,
+                canDelete: viewModel.settings.promptVersions.count > 1 &&
+                    viewModel.settings.activePromptVersionID != prompt.wrappedValue.id,
                 onActivate: { viewModel.activatePromptVersion(id: prompt.wrappedValue.id) },
                 onDelete: {
                     viewModel.deletePromptVersion(id: prompt.wrappedValue.id)
@@ -405,10 +410,10 @@ struct SettingsView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: activeID == item.id ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.body.weight(.medium))
                             .foregroundStyle(activeID == item.id ? SettingsPalette.accent : .secondary)
                         Text(item[keyPath: title])
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.body.weight(.medium))
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
@@ -429,7 +434,7 @@ struct SettingsView: View {
 
             Button(action: onAdd) {
                 Label(addTitle, systemImage: "plus")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                     .contentShape(Rectangle())
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8)
@@ -520,7 +525,7 @@ struct SettingsView: View {
     private func pageHeader(_ title: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.title3.weight(.semibold))
             Spacer()
         }
         .padding(.horizontal, 24)
@@ -576,7 +581,7 @@ struct SettingsView: View {
     ) -> some View {
         HStack(alignment: .center, spacing: 12) {
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .font(.body.weight(.medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 84, alignment: .leading)
 
@@ -587,10 +592,7 @@ struct SettingsView: View {
     }
 
     private func editor(text: Binding<String>, height: CGFloat) -> some View {
-        TextEditor(text: text)
-            .font(.system(.body, design: .monospaced))
-            .scrollContentBackground(.hidden)
-            .padding(8)
+        SettingsTextEditor(text: text)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
             .overlay(
                 RoundedRectangle(cornerRadius: 7)
@@ -610,25 +612,25 @@ struct SettingsView: View {
         HStack(spacing: 10) {
             if isActive {
                 Label("当前", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(SettingsPalette.accent)
             } else {
                 Button(activateTitle, action: onActivate)
             }
 
+            Spacer()
+
             Button(role: .destructive, action: onDelete) {
                 Text(deleteTitle)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(canDelete ? .red : SettingsPalette.disabledText)
             }
             .disabled(!canDelete)
-
-            Spacer()
         }
     }
 
     private func emptyState(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 13, weight: .medium))
+            .font(.body.weight(.medium))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 120)
             .background(SettingsPalette.panel, in: RoundedRectangle(cornerRadius: 8))
@@ -673,6 +675,78 @@ struct SettingsView: View {
     }
 }
 
+private struct SettingsTextEditor: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.verticalScroller?.controlSize = .small
+
+        let textView = NSTextView()
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.textColor = .labelColor
+        textView.drawsBackground = false
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.allowsUndo = true
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+        textView.textContainer?.lineFragmentPadding = 0
+
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return
+        }
+
+        if textView.string != text {
+            textView.string = text
+        }
+        textView.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.textColor = .labelColor
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding private var text: String
+        weak var textView: NSTextView?
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else {
+                return
+            }
+            text = textView.string
+        }
+    }
+}
+
 private struct SettingsScrollOffsetPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
@@ -694,6 +768,7 @@ private enum SettingsPalette {
     })
     static let hover = selection
     static let accent = Color(nsColor: .controlAccentColor)
+    static let disabledText = Color(nsColor: .disabledControlTextColor)
 }
 
 #if DEBUG

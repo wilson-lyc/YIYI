@@ -14,7 +14,7 @@ struct GlobalHotKeySettingControl: View {
         VStack(alignment: .trailing, spacing: 6) {
             HStack(spacing: 8) {
                 Text(isRecording ? "请按下快捷键" : viewModel.settings.shortcutDisplay)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .font(.body.monospaced().weight(.medium))
                     .foregroundStyle(isRecording ? Color(nsColor: .controlAccentColor) : .primary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -36,7 +36,7 @@ struct GlobalHotKeySettingControl: View {
 
             if let conflictMessage {
                 Text(conflictMessage)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(.red)
                     .multilineTextAlignment(.trailing)
             }

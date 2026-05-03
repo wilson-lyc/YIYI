@@ -16,16 +16,10 @@ enum PromptService {
         let nextIndex = settings.promptVersions.count + 1
         let version = PromptVersion(
             name: "提示词 \(nextIndex)",
-            systemPrompt: PromptVersion.defaultSystemPrompt,
-            prompt: """
-            Translate the selected text into \(settings.targetLanguage).
-            Return only the result.
-
-            {{selectedText}}
-            """
+            systemPrompt: "",
+            prompt: ""
         )
         settings.promptVersions.append(version)
-        settings.activePromptVersionID = version.id
         return version.id
     }
 

@@ -10,6 +10,7 @@ protocol SelectedTextProviding: Sendable {
 
 struct SelectedTextService: SelectedTextProviding {
     private static let selectionReadTimeout: Duration = .seconds(3)
+    private static let accessibilityMessagingTimeout: Float = 0.7
 
     enum ProviderError: LocalizedError {
         case accessibilityPermissionMissing
@@ -33,32 +34,21 @@ struct SelectedTextService: SelectedTextProviding {
     }
 
     private func selectedText(timeout: Duration) async throws -> String {
-        let providerTask = Task.detached(priority: .userInitiated) {
+        try await Self.withTimeout(timeout) {
             try await Self.provideSelectedText()
-        }
-
-        let timeoutTask = Task<String, Error>.detached(priority: .userInitiated) {
-            try await Task.sleep(for: timeout)
-            throw ProviderError.selectionReadTimedOut
-        }
-
-        do {
-            let text = try await race(providerTask, against: timeoutTask)
-            timeoutTask.cancel()
-            return text
-        } catch {
-            providerTask.cancel()
-            timeoutTask.cancel()
-            throw error
         }
     }
 
     private static func provideSelectedText() async throws -> String {
+        try Task.checkCancellation()
+
         if let text = selectedTextFromAccessibility(), !text.isEmpty {
             return text
         }
 
-        if let text = await selectedTextFromCopyShortcut(), !text.isEmpty {
+        try Task.checkCancellation()
+
+        if let text = try await selectedTextFromCopyShortcut(), !text.isEmpty {
             return text
         }
 
@@ -67,6 +57,8 @@ struct SelectedTextService: SelectedTextProviding {
 
     private static func selectedTextFromAccessibility() -> String? {
         let systemWideElement = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWideElement, accessibilityMessagingTimeout)
+
         var focusedValue: CFTypeRef?
         let focusedResult = AXUIElementCopyAttributeValue(
             systemWideElement,
@@ -79,6 +71,8 @@ struct SelectedTextService: SelectedTextProviding {
         }
 
         let focusedElement = focusedValue as! AXUIElement
+        AXUIElementSetMessagingTimeout(focusedElement, accessibilityMessagingTimeout)
+
         var selectedValue: CFTypeRef?
         let selectedResult = AXUIElementCopyAttributeValue(
             focusedElement,
@@ -94,7 +88,7 @@ struct SelectedTextService: SelectedTextProviding {
     }
 
     @MainActor
-    private static func selectedTextFromCopyShortcut() async -> String? {
+    private static func selectedTextFromCopyShortcut() async throws -> String? {
         let pasteboard = NSPasteboard.general
         let previousItems = pasteboard.pasteboardItems ?? []
         let previousChangeCount = pasteboard.changeCount
@@ -102,18 +96,19 @@ struct SelectedTextService: SelectedTextProviding {
         pasteboard.clearContents()
         sendCopyShortcut()
 
-        let copiedText = await copiedTextFromPasteboard(
-            pasteboard,
-            previousChangeCount: previousChangeCount,
-            timeout: .milliseconds(900)
-        )
+        do {
+            let copiedText = try await copiedTextFromPasteboard(
+                pasteboard,
+                previousChangeCount: previousChangeCount,
+                timeout: .milliseconds(900)
+            )
 
-        pasteboard.clearContents()
-        if !previousItems.isEmpty {
-            pasteboard.writeObjects(previousItems)
+            restorePasteboard(pasteboard, items: previousItems)
+            return copiedText
+        } catch {
+            restorePasteboard(pasteboard, items: previousItems)
+            throw error
         }
-
-        return copiedText
     }
 
     @MainActor
@@ -121,42 +116,61 @@ struct SelectedTextService: SelectedTextProviding {
         _ pasteboard: NSPasteboard,
         previousChangeCount: Int,
         timeout: Duration
-    ) async -> String? {
+    ) async throws -> String? {
         let deadline = ContinuousClock.now.advanced(by: timeout)
 
         repeat {
+            try Task.checkCancellation()
+
             if pasteboard.changeCount != previousChangeCount,
                let copiedText = normalize(pasteboard.string(forType: .string)) {
                 return copiedText
             }
 
-            try? await Task.sleep(for: .milliseconds(40))
+            try await Task.sleep(for: .milliseconds(40))
         } while ContinuousClock.now < deadline
 
         return normalize(pasteboard.string(forType: .string))
     }
 
-    private func race(
-        _ providerTask: Task<String, Error>,
-        against timeoutTask: Task<String, Error>
-    ) async throws -> String {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
-            let raceState = SelectedTextServiceRaceState()
+    @MainActor
+    private static func restorePasteboard(_ pasteboard: NSPasteboard, items: [NSPasteboardItem]) {
+        pasteboard.clearContents()
+        if !items.isEmpty {
+            pasteboard.writeObjects(items)
+        }
+    }
 
-            Task.detached(priority: .userInitiated) {
-                do {
-                    raceState.resume(continuation, with: .success(try await providerTask.value))
-                } catch {
-                    raceState.resume(continuation, with: .failure(error))
-                }
+    private static func withTimeout<T: Sendable>(
+        _ timeout: Duration,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let operationTask = Task.detached(priority: .userInitiated) {
+            try await operation()
+        }
+
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask(priority: .userInitiated) {
+                try await operationTask.value
             }
 
-            Task.detached(priority: .userInitiated) {
-                do {
-                    raceState.resume(continuation, with: .success(try await timeoutTask.value))
-                } catch {
-                    raceState.resume(continuation, with: .failure(error))
+            group.addTask(priority: .userInitiated) {
+                try await Task.sleep(for: timeout)
+                throw ProviderError.selectionReadTimedOut
+            }
+
+            do {
+                guard let result = try await group.next() else {
+                    throw CancellationError()
                 }
+
+                group.cancelAll()
+                operationTask.cancel()
+                return result
+            } catch {
+                group.cancelAll()
+                operationTask.cancel()
+                throw error
             }
         }
     }
@@ -183,22 +197,5 @@ struct SelectedTextService: SelectedTextProviding {
         }
 
         return normalized
-    }
-}
-
-private final class SelectedTextServiceRaceState: @unchecked Sendable {
-    private let lock = NSLock()
-    private var didResume = false
-
-    func resume(_ continuation: CheckedContinuation<String, Error>, with result: Result<String, Error>) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard !didResume else {
-            return
-        }
-
-        didResume = true
-        continuation.resume(with: result)
     }
 }
